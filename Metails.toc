@@ -2,7 +2,7 @@
 ## Title: Metails!
 ## Notes: Personal combat meter. Your damage, healing, interrupts, deaths and more. Nobody else's.
 ## Author: Pwizzlard
-## Version: 1.1.0
+## Version: 1.1.1
 ## IconTexture: Interface\Icons\Ability_Warrior_Rampage
 ## X-Website: https://github.com/Pwizzlard/Metails
 ## X-Category: Combat

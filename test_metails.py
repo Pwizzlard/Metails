@@ -123,9 +123,9 @@ assert len(log) == 1 and log[1].amount == -500 and log[1].hp == 25 and log[1].ok
 
 mode(16)
 rows = g.rowsOf(win)
-assert rows[1].right.text == "500  25%" and rows[1].left.text == "-1.0s Bite (Hogger)", (rows[1].right.text, rows[1].left.text)
+assert rows[1].right.text == "500 (25.0%)" and rows[1].left.text == "-1.0s Bite (Hogger)", (rows[1].right.text, rows[1].left.text)
 mode(13)
-assert rows[1].right.text == "10s  91%" and win.rate.text == "11s", (rows[1].right.text, win.rate.text)
+assert rows[1].right.text == "10s (90.9%)" and win.rate.text == "11s", (rows[1].right.text, win.rate.text)
 mode(1)
 assert win.title.text == "Damage Done - Hogger", win.title.text
 click(win, "RightButton")
@@ -135,7 +135,7 @@ db.windows[1].view = 1
 slash("report party 3")
 chat = list(g.chat.values())
 assert len(chat) == 2 and chat[0][2] == "PARTY" and chat[0][1].startswith("Metails! Damage Done - Hogger: 10"), (chat[0][1], chat[0][2])
-assert chat[1][1] == "1. Fireball  10 (1)  100%", chat[1][1]
+assert chat[1][1] == "1. Fireball  10 (1, 100.0%)", chat[1][1]
 slash("report Bob")
 assert list(g.chat.values())[-1][2] == "WHISPER" and list(g.chat.values())[-1][3] == "Bob"
 

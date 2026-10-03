@@ -21,7 +21,6 @@ local MODES = {
 local MAXSEGS, RING, WIDTH, ROWH = 12, 12, 230, 17
 local TEXTURES = { smooth = "Interface\\TargetingFrame\\UI-StatusBar", flat = "Interface\\Buttons\\WHITE8x8", raid = "Interface\\RaidFrame\\Raid-Bar-Hp-Fill" }
 local CHANNELS = { say = "SAY", yell = "YELL", party = "PARTY", raid = "RAID", guild = "GUILD", officer = "OFFICER", instance = "INSTANCE_CHAT" }
-local SKULL = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local db, cur, playerGUID, windows = nil, nil, nil, {}
 local list, ring, ringN = {}, {}, 0
 local active, onTarget = { buffs = {}, debuffs = {} }, {}
@@ -141,6 +140,12 @@ local function logHit(name, tex, amount, overkill)
   e.hp = UnitHealth("player") / max(1, UnitHealthMax("player")) * 100
 end
 
+local function addDeath(seg, death)
+  seg.deaths = seg.deaths or {}
+  table.insert(seg.deaths, death)
+  if #seg.deaths > 5 then table.remove(seg.deaths, 1) end
+end
+
 local function died()
   if UnitIsFeignDeath("player") then return end
   touch()
@@ -150,11 +155,7 @@ local function died()
     if e and now - e.t < 30 then log[#log + 1] = e end
   end
   wipe(ring)
-  for _, seg in next, { cur, db.overall } do
-    seg.deaths = seg.deaths or {}
-    table.insert(seg.deaths, { t = now, log = log })
-    if #seg.deaths > 5 then table.remove(seg.deaths, 1) end
-  end
+  both(addDeath, { t = now, log = log })
 end
 
 local function cleu(_, ev, _, srcGUID, srcName, srcFlags, _, dstGUID, dstName, dstFlags, _, ...)
@@ -207,7 +208,7 @@ local function cleu(_, ev, _, srcGUID, srcName, srcFlags, _, dstGUID, dstName, d
   elseif suffix == "INTERRUPT" and mine then record("interrupts", key, tex, 1)
   elseif (suffix == "DISPEL" or suffix == "STOLEN") and mine then record("dispels", key, tex, 1)
   elseif suffix == "SUCCESS" and srcGUID == playerGUID then record("casts", spellName, tex, 1)
-  elseif ev == "PARTY_KILL" and mine then record("kills", dstName or "?", SKULL, 1)
+  elseif ev == "PARTY_KILL" and mine then record("kills", dstName or "?", "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", 1)
   elseif ev == "SPELL_AURA_APPLIED" then
     local kind = select(o, ...)
     if toMe and kind == "BUFF" then auraOn("buffs", spellName, tex)
@@ -268,12 +269,12 @@ local function collect(cfg)
     table.sort(list, function(x, y) return x.amount > y.amount end)
     top = list[1] and list[1].amount or 0
   end
-  return mode, seg, segLabel(cfg.view), tot, top, time
+  return mode, segLabel(cfg.view), tot, top, time
 end
 
 local function rowText(mode, s, tot, time)
   local pct = s.pct or min(100, s.amount / (mode.secs and time or max(tot, 1)) * 100)
-  return (mode.secs and ("%.0fs"):format(s.amount) or fmt(s.amount)) .. (mode.rate and (" (" .. fmt(s.amount / time) .. ")") or "") .. ("  %.0f%%"):format(pct)
+  return (mode.secs and ("%.0fs"):format(s.amount) or fmt(s.amount)) .. " (" .. (mode.rate and (fmt(s.amount / time) .. ", ") or "") .. ("%.1f%%)"):format(pct)
 end
 
 local function headText(mode, tot, time)
@@ -317,7 +318,7 @@ end
 local refresh, applyVisibility
 
 local function report(f, chan, target, n)
-  local mode, _, label, tot, _, time = collect(f.cfg)
+  local mode, label, tot, _, time = collect(f.cfg)
   chan = chan or (IsInRaid() and "RAID" or IsInGroup() and "PARTY" or "SAY")
   SendChatMessage(("Metails! %s - %s: %s"):format(mode.label, label, headText(mode, tot, time)), chan, nil, target)
   for i = 1, min(n or 5, #list) do
@@ -366,12 +367,12 @@ local function rowAt(f, i)
   if r then return r end
   r = CreateFrame("StatusBar", nil, f)
   r.win = f
-  r:SetSize(WIDTH - 20, ROWH - 1)
+  r:SetSize(210, 16)
   r:SetPoint("TOPLEFT", 19, -(18 + (i - 1) * ROWH))
   r:SetStatusBarTexture(TEXTURES[db.opts.texture])
   r:SetStatusBarColor(f.color.r, f.color.g, f.color.b, 0.8)
   r.icon = r:CreateTexture(nil, "ARTWORK")
-  r.icon:SetSize(ROWH - 1, ROWH - 1); r.icon:SetPoint("RIGHT", r, "LEFT", -1, 0)
+  r.icon:SetSize(16, 16); r.icon:SetPoint("RIGHT", r, "LEFT", -1, 0)
   r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   r.left = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   r.left:SetPoint("LEFT", 3, 0); r.left:SetJustifyH("LEFT")
@@ -389,7 +390,7 @@ end
 
 function refresh(f)
   if not f:IsShown() then return end
-  local mode, _, label, tot, top, time = collect(f.cfg)
+  local mode, label, tot, top, time = collect(f.cfg)
   f.title:SetText(mode.label .. " - " .. label)
   f.rate:SetText(headText(mode, tot, time))
   local n = tot > 0 and min(#list, db.opts.rows) or 0
@@ -452,10 +453,17 @@ local function newWindow(cfg)
     GameTooltip:Show()
   end)
   f:SetScript("OnLeave", GameTooltip_Hide)
+  f.header = f:CreateTexture(nil, "BACKGROUND")
+  f.header:SetPoint("TOPLEFT"); f.header:SetPoint("TOPRIGHT"); f.header:SetHeight(18)
+  f.header:SetColorTexture(f.color.r * 0.45, f.color.g * 0.45, f.color.b * 0.45, 0.9)
+  f.close = CreateFrame("Button", nil, f)
+  f.close:SetSize(14, 14); f.close:SetPoint("TOPRIGHT", -2, -2)
+  f.close:SetNormalFontObject("GameFontNormalSmall"); f.close:SetText("x")
+  f.close:SetScript("OnClick", function() cfg.hidden = true; applyVisibility() end)
   f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  f.title:SetPoint("TOPLEFT", 4, -2); f.title:SetJustifyH("LEFT")
+  f.title:SetPoint("TOPLEFT", 4, -3); f.title:SetJustifyH("LEFT")
   f.rate = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  f.rate:SetPoint("TOPRIGHT", -4, -2)
+  f.rate:SetPoint("RIGHT", f.close, "LEFT", -3, 0)
   f.title:SetPoint("RIGHT", f.rate, "LEFT", -4, 0)
   windows[#windows + 1] = f
   return f
