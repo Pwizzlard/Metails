@@ -15,6 +15,7 @@ No raid syncing, no comparing yourself to the group, no plugin system. One small
 - Report any view to say, party, raid, guild or a whisper.
 - Open a second window to watch damage and healing at once.
 - Hide automatically in or out of combat, change rows, opacity, bar texture and font size.
+- Minimap button and an entry under Options, AddOns with the command list and the main buttons.
 - Tiny footprint. No libraries, no per-event allocations, and everything it saves is validated on load.
 
 ## Views
@@ -48,7 +49,7 @@ No raid syncing, no comparing yourself to the group, no plugin system. One small
 | Drag | Move the window |
 | Hover a row | Details for that spell |
 
-A keybind to show or hide the window is under Key Bindings, AddOns, Metails!.
+The minimap button shows or hides the window on left-click, opens the menu on right-click, and can be dragged around the minimap. A keybind to show or hide the window is under Key Bindings, AddOns, Metails!. The same command list and the main buttons live under Options, AddOns, Metails!.
 
 ## Commands
 
@@ -66,6 +67,7 @@ A keybind to show or hide the window is under Key Bindings, AddOns, Metails!.
 /metails texture smooth       Bar texture: smooth, flat or raid
 /metails autohide combat      Hide in combat, out of combat (ooc), or off
 /metails pets rows            Pet rows alongside yours, grouped per pet, or off
+/metails minimap              Show or hide the minimap button
 ```
 
 ## Install

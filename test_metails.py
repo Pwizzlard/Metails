@@ -28,12 +28,17 @@ local function stub()
     if k == "IsShown" then return function() return true end end
     if k == "GetPoint" then return function() return "CENTER", nil, "CENTER", 1, 2 end end
     if k == "GetFont" then return function() return "font", 10, "" end end
+    if k == "GetCenter" then return function() return 0, 0 end end
+    if k == "GetEffectiveScale" then return function() return 1 end end
+    if k == "GetWidth" then return function() return 140 end end
     if k == "SetText" then return function(self, v) self.text = v end end
     if k == "CreateFontString" or k == "CreateTexture" then return function() return stub() end end
     return function() end
   end })
 end
-UIParent, GameTooltip = stub(), stub()
+UIParent, GameTooltip, Minimap = stub(), stub(), stub()
+cursor = { 0, 100 }
+GetCursorPosition = function() return cursor[1], cursor[2] end
 frames = {}
 CreateFrame = function(kind, name) local f = stub(); frames[#frames + 1] = f; return f end
 function windowsOf() local out = {} for _, f in ipairs(frames) do if f.scripts.OnMouseWheel then out[#out + 1] = f end end return out end
@@ -155,6 +160,14 @@ slash("alpha 0.2")
 assert db.opts.rows == 3 and db.opts.alpha == 0.2
 g.Metails_Toggle()
 assert db.windows[1].hidden is True
+mm = [fr for fr in list(g.frames.values()) if "OnDragStart" in dict(fr.scripts) and "OnMouseWheel" not in dict(fr.scripts)][0]
+assert db.opts.minimap == 220
+mm.scripts.OnDragStart(mm)
+mm.scripts.OnUpdate(mm)
+mm.scripts.OnDragStop(mm)
+assert abs(db.opts.minimap - 90) < 1e-6 and mm.scripts.OnUpdate is None, db.opts.minimap
+slash("minimap")
+assert db.opts.minimapHidden is True
 g.Metails_Toggle()
 assert db.windows[1].hidden is False
 

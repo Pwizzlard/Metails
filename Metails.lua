@@ -1,4 +1,5 @@
 local band, min, max = bit.band, math.min, math.max
+local atan2 = math.atan2 or math.atan
 local MINE, HOSTILE = COMBATLOG_OBJECT_AFFILIATION_MINE, COMBATLOG_OBJECT_REACTION_HOSTILE
 local MODES = {
   { key = "damage",     label = "Damage Done",            rate = true },
@@ -486,9 +487,80 @@ function Metails_Toggle()
   applyVisibility()
 end
 
+local HELP = [[/metails - show or hide the window
+/metails report [say|party|raid|guild|name] [lines] - post the current view to chat
+/metails new, close - open or close a second window
+/metails reset - clear all data
+/metails lock - lock or unlock window positions
+/metails scale <n>, rows <n>, alpha <0-1>, fontsize <n> - size, rows, opacity, font
+/metails texture <smooth|flat|raid> - bar texture
+/metails autohide <combat|ooc|off> - hide in combat or out of combat
+/metails pets <rows|group|off> - pet rows alongside yours, one row per pet, or ignored
+/metails minimap - show or hide the minimap button]]
+
+local minimapBtn
+local function minimapPos(b)
+  local a = math.rad(db.opts.minimap)
+  b:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * 80, math.sin(a) * 80)
+end
+
+local function buildMinimap()
+  local b = CreateFrame("Button", nil, Minimap)
+  b:SetSize(31, 31); b:SetFrameStrata("MEDIUM"); b:SetFrameLevel(8)
+  b:RegisterForClicks("LeftButtonUp", "RightButtonUp"); b:RegisterForDrag("LeftButton")
+  local border = b:CreateTexture(nil, "OVERLAY")
+  border:SetSize(53, 53); border:SetPoint("TOPLEFT"); border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+  local icon = b:CreateTexture(nil, "BACKGROUND")
+  icon:SetSize(20, 20); icon:SetPoint("CENTER", 0, 1); icon:SetTexture("Interface\\Icons\\Ability_Warrior_Rampage"); icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+  b:SetScript("OnClick", function(_, btn)
+    if btn == "LeftButton" then Metails_Toggle() elseif MenuUtil and MenuUtil.CreateContextMenu then openMenu(windows[1]) end
+  end)
+  b:SetScript("OnDragStart", function(s)
+    s:SetScript("OnUpdate", function()
+      local mx, my = Minimap:GetCenter()
+      local cx, cy = GetCursorPosition()
+      local sc = Minimap:GetEffectiveScale()
+      db.opts.minimap = math.deg(atan2(cy / sc - my, cx / sc - mx))
+      minimapPos(s)
+    end)
+  end)
+  b:SetScript("OnDragStop", function(s) s:SetScript("OnUpdate", nil) end)
+  b:SetScript("OnEnter", function(s)
+    GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+    GameTooltip:AddLine("Metails!")
+    GameTooltip:AddLine("Left-click: show or hide\nRight-click: menu\nDrag: move", 1, 1, 1)
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", GameTooltip_Hide)
+  minimapPos(b)
+  b:SetShown(not db.opts.minimapHidden)
+  minimapBtn = b
+end
+
 local CMD = {}
 CMD[""] = Metails_Toggle
 CMD.reset = reset
+function CMD.minimap() db.opts.minimapHidden = not db.opts.minimapHidden; minimapBtn:SetShown(not db.opts.minimapHidden) end
+
+local function buildOptions()
+  local panel = CreateFrame("Frame")
+  panel.name = "Metails!"
+  local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  title:SetPoint("TOPLEFT", 16, -16); title:SetText("Metails!")
+  local body = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12); body:SetWidth(580); body:SetJustifyH("LEFT")
+  body:SetText("A personal combat meter. Left-click the window for the next view, right-click for the menu, mouse wheel for fight segments, drag to move.\n\n" .. HELP)
+  local x = 0
+  for _, b in ipairs({ { "Show / hide", Metails_Toggle }, { "New window", CMD.new }, { "Minimap button", CMD.minimap }, { "Reset data", reset } }) do
+    local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    btn:SetSize(130, 24); btn:SetPoint("TOPLEFT", body, "BOTTOMLEFT", x, -16); btn:SetText(b[1]); btn:SetScript("OnClick", b[2])
+    x = x + 136
+  end
+  if Settings and Settings.RegisterCanvasLayoutCategory then
+    Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(panel, panel.name))
+  elseif InterfaceOptions_AddCategory then InterfaceOptions_AddCategory(panel) end
+end
 function CMD.lock() for _, f in ipairs(windows) do f.cfg.locked = not f.cfg.locked end; print("Metails!: " .. (windows[1].cfg.locked and "locked" or "unlocked")) end
 function CMD.scale(a) for _, f in ipairs(windows) do f.cfg.scale = num(tonumber(a), 0.5, 3, 1); f:SetScale(f.cfg.scale) end end
 function CMD.rows(a) db.opts.rows = num(tonumber(a), 1, 40, 10); refreshAll() end
@@ -509,9 +581,7 @@ function CMD.report(a)
   if not chan and who ~= "" then chan, target = "WHISPER", who end
   report(windows[1], chan, target, tonumber(n))
 end
-function CMD.help()
-  print("Metails!: /metails (toggle), reset, lock, scale <n>, rows <n>, alpha <0-1>, fontsize <n>, texture <smooth|flat|raid>, autohide <combat|ooc|off>, pets <rows|group|off>, new, close, report [say|party|raid|guild|name] [lines]")
-end
+function CMD.help() print("Metails!\n" .. HELP) end
 
 SLASH_METAILS1 = "/metails"
 SlashCmdList.METAILS = function(msg)
@@ -549,12 +619,14 @@ ev:SetScript("OnEvent", function(_, e, ...)
     end
     local o = type(db.opts) == "table" and db.opts or {}
     db.opts = { rows = num(o.rows, 1, 40, 10), alpha = num(o.alpha, 0, 1, 0.55), fontsize = num(o.fontsize, 6, 20, 10),
-                texture = TEXTURES[o.texture] and o.texture or "smooth", autohide = o.autohide or "off", pets = o.pets or "rows" }
+                texture = TEXTURES[o.texture] and o.texture or "smooth", autohide = o.autohide or "off", pets = o.pets or "rows",
+                minimap = num(o.minimap, -360, 360, 220), minimapHidden = o.minimapHidden == true }
     playerGUID = UnitGUID("player")
     if AuraUtil and AuraUtil.ForEachAura then
       AuraUtil.ForEachAura("player", "HELPFUL", nil, function(name, tex) active.buffs[name] = { t = GetTime(), icon = tex, n = 1 } end)
     end
     for _, w in ipairs(db.windows) do newWindow(w) end
+    buildMinimap(); buildOptions()
     applyVisibility()
     C_Timer.NewTicker(0.5, refreshAll)
     for _, name in ipairs({ "COMBAT_LOG_EVENT_UNFILTERED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "ENCOUNTER_START", "ENCOUNTER_END" }) do ev:RegisterEvent(name) end
