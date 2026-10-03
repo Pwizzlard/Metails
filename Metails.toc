@@ -1,7 +1,11 @@
 ## Interface: 16001
 ## Title: Metails
-## Notes: Personal combat meter: your damage, healing, interrupts and more. Nobody else's.
-## Author: Sam
-## Version: 1.0
+## Notes: Personal combat meter. Your damage, healing, interrupts, deaths and more. Nobody else's.
+## Author: Pwizzlard
+## Version: 1.0.0
+## IconTexture: Interface\Icons\Ability_Warrior_Rampage
+## X-Website: https://github.com/Pwizzlard/Metails
+## X-Category: Combat
+## X-License: MIT
 ## SavedVariables: MetailsDB
 Metails.lua
