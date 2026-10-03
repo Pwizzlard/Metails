@@ -9,7 +9,7 @@ out = here / "dist"
 out.mkdir(exist_ok=True)
 zip_path = out / f"Metails-{version}-forever.zip"
 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-    for name in ("Metails.toc", "Metails.lua", "README.md", "LICENSE"):
+    for name in ("Metails.toc", "Metails.lua", "Bindings.xml", "README.md", "LICENSE"):
         z.write(here / name, f"Metails/{name}")
 meta = out / "release.json"
 meta.write_text(json.dumps({"releases": [{"name": "Metails", "version": tag, "filename": zip_path.name, "nolib": False,
