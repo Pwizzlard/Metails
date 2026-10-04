@@ -555,6 +555,10 @@ end
 function CMD.diag()
   print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
   print("Metails!: events the client refused: " .. (#refused > 0 and table.concat(refused, ", ") or "none"))
+  local r = windows[1].rows[1]
+  local tex = r and r:IsShown() and r:GetStatusBarTexture()
+  local w = tex and tex:GetWidth()
+  print(("Metails!: first bar fill width %s%s"):format(w == nil and "nil" or secret(w) and "secret" or "readable", plain(w) and (" = " .. ("%.1f"):format(w) .. " of " .. ("%.0f"):format(r:GetWidth())) or ""))
   local ok, err = pcall(probe, "outside a handler")
   if not ok then print("Metails! diag error: " .. tostring(err)) end
   diagArmed = true

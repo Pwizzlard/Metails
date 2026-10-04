@@ -53,6 +53,7 @@ local function stub()
     if k == "GetCenter" then return function() return 0, 0 end end
     if k == "GetEffectiveScale" then return function() return 1 end end
     if k == "GetWidth" then return function() return 140 end end
+    if k == "GetStatusBarTexture" then return function() return stub() end end
     if k == "SetText" then return function(self, v) self.text = v end end
     if k == "SetFormattedText" then return function(self, f, ...) self.text = f:format(...) end end
     if k == "SetValue" then return function(self, v) self.value = v end end
