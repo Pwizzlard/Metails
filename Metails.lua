@@ -552,6 +552,12 @@ local function probe(where)
   local fp = plain(first)
   print(("Metails! %s spells: call %s, source %s, list %s with %s entries, first entry %s, its id %s, amount %s, details %s"):format(where, ok and "ok" or ("failed: " .. tostring(src)),
     tag(src), tag(list), plain(list) and tostring(#list) or "?", tag(first), tag(fp and first.spellID), tag(fp and first.totalAmount), tag(fp and first.combatSpellDetails)))
+  local d = fp and first.combatSpellDetails
+  if not plain(d) then return end
+  local one = d.unitName ~= nil and d or d[1]
+  print(("Metails! %s targets: shape %s, count %d, first %s, name %s, amount %s, isPet %s, isMob %s"):format(where, d.unitName ~= nil and "single" or "list", #d,
+    tag(one), tag(plain(one) and one.unitName), tag(plain(one) and one.amount), tag(plain(one) and one.isPet), tag(plain(one) and one.isMob)))
+  if plain(one) and plain(one.unitName) then print("Metails! first target name: " .. tostring(one.unitName) .. ", amount " .. tostring(plain(one.amount) and one.amount or "secret")) end
 end
 function CMD.diag()
   print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
