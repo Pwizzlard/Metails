@@ -8,6 +8,8 @@ No raid syncing, no comparing yourself to the group, no plugin system. One small
 
 WoW Forever runs on the Midnight client, where addons can no longer read the combat log. Blizzard's own damage meter does the collecting and exposes it through the `C_DamageMeter` API. Metails! is a personal view over that data: it finds your row in each of Blizzard's meters and shows your spells, your targets and your deaths. That means it only ever shows what Blizzard tracks, and it costs almost nothing while you play.
 
+During a fight the client hands addons locked numbers. Metails! still draws them live, straight onto the bars and text, and fills in sorting, percentages and tooltips the moment the numbers unlock.
+
 ## Features
 
 - Nine views: damage done, damage taken by spell or by attacker, avoidable damage, healing, absorbs, interrupts, dispels and a death log.
@@ -62,6 +64,7 @@ The minimap button shows or hides the window on left-click, opens the menu on ri
 /metails texture smooth       Bar texture: smooth, flat or raid
 /metails autohide combat      Hide in combat, out of combat (ooc), or off
 /metails minimap              Show or hide the minimap button
+/metails diag                 Print whether the game is handing over readable numbers
 ```
 
 ## Install

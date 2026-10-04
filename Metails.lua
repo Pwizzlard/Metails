@@ -27,6 +27,12 @@ local function fmt(n)
   return ("%.0f"):format(n)
 end
 
+local function abbrev(v)
+  if v == nil then return "0" end
+  if plain(v) then return fmt(v) end
+  return AbbreviateNumbers and AbbreviateNumbers(v) or "?"
+end
+
 local function spellName(id)
   local n = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)
   return n or (GetSpellInfo and GetSpellInfo(id)) or ("Spell " .. id)
@@ -101,20 +107,22 @@ local function snapshot(f)
   end
   local snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {}, time = plain(s.durationSeconds) and s.durationSeconds or 0 }
   if me then
-    if plain(me.totalAmount) then snap.total = me.totalAmount end
-    if plain(me.amountPerSecond) then snap.rate = me.amountPerSecond end
+    if me.totalAmount ~= nil then snap.total = me.totalAmount end
+    if me.amountPerSecond ~= nil then snap.rate = me.amountPerSecond end
+    snap.locked = secret(snap.total) or secret(snap.rate)
     if m.log then
       if plain(me.deathRecapID) and C_DeathRecap then deathRows(me.deathRecapID, snap.rows) end
     else
       local byUnit = {}
       for _, sp in ipairs(spells(v, m.type, me) or {}) do
-        if plain(sp) and plain(sp.spellID) and plain(sp.totalAmount) and sp.totalAmount > 0 then
-          local name = spellName(sp.spellID)
-          if plain(sp.creatureName) and sp.creatureName ~= "" then name = name .. " (" .. sp.creatureName .. ")" end
-          local row = { name = name, icon = icon(sp.spellID), amount = sp.totalAmount, rate = plain(sp.amountPerSecond) and sp.amountPerSecond or nil,
-                        overkill = plain(sp.overkillAmount) and sp.overkillAmount or nil, units = {} }
-          units(sp, row.units)
-          if m.by then
+        local amt = plain(sp) and sp.totalAmount
+        if amt ~= nil and (secret(amt) or amt > 0) and sp.spellID ~= nil then
+          local name = secret(sp.spellID) and C_Spell.GetSpellName(sp.spellID) or spellName(sp.spellID)
+          if plain(name) and plain(sp.creatureName) and sp.creatureName ~= "" then name = name .. " (" .. sp.creatureName .. ")" end
+          local row = { name = name, icon = secret(sp.spellID) and C_Spell.GetSpellTexture(sp.spellID) or icon(sp.spellID), amount = amt, rate = sp.amountPerSecond,
+                        overkill = plain(sp.overkillAmount) and sp.overkillAmount > 0 and sp.overkillAmount or nil, units = {} }
+          if secret(amt) then snap.locked = true else units(sp, row.units) end
+          if m.by and not secret(amt) then
             for _, u in ipairs(row.units) do
               local r = byUnit[u.name] or { name = u.name, icon = 132349, amount = 0, units = {} }
               byUnit[u.name] = r
@@ -125,8 +133,10 @@ local function snapshot(f)
         end
       end
       for _, r in pairs(byUnit) do snap.rows[#snap.rows + 1] = r end
-      table.sort(snap.rows, function(a, b) return a.amount > b.amount end)
-      if m.by then snap.total = 0; for _, r in ipairs(snap.rows) do snap.total = snap.total + r.amount end end
+      if not snap.locked then
+        table.sort(snap.rows, function(a, b) return a.amount > b.amount end)
+        if m.by then snap.total = 0; for _, r in ipairs(snap.rows) do snap.total = snap.total + r.amount end end
+      end
     end
   end
   f.snap = snap
@@ -143,6 +153,7 @@ end
 
 local function rowTip(r)
   local s, m = r.data, r.mode
+  if not plain(s.amount) or not plain(s.name) then return end
   GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
   GameTooltip:AddLine(s.name)
   local function line(k, v) GameTooltip:AddDoubleLine(k, v, 1, 1, 1, 1, 1, 1) end
@@ -169,6 +180,7 @@ end
 local function report(f, chan, target, n)
   local m, snap = MODES[f.cfg.mode], f.snap
   if not snap then return end
+  if snap.locked then print("Metails!: the numbers are locked until the fight ends.") return end
   chan = chan or (IsInRaid() and "RAID" or IsInGroup() and "PARTY" or "SAY")
   local head = ("Metails! %s: %s"):format(snap.label, headText(m, snap))
   local lines = {}
@@ -265,10 +277,10 @@ function refresh(f)
     snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {} }
   end
   f.title:SetText(snap.label)
-  f.rate:SetText(headText(m, snap))
+  if snap.locked then f.rate:SetFormattedText(m.rate and "%s (%s/s)" or "%s", abbrev(snap.total), abbrev(snap.rate))
+  else f.rate:SetText(headText(m, snap)) end
   local n = min(#snap.rows, db.opts.rows)
   local top = snap.rows[1] and snap.rows[1].amount or 0
-  for _, r in ipairs(snap.rows) do top = max(top, r.amount) end
   for i = 1, max(n, #f.rows) do
     local r = rowAt(f, i)
     r:SetShown(i <= n)
@@ -279,7 +291,8 @@ function refresh(f)
       r:SetValue(s.amount)
       r.icon:SetTexture(s.icon)
       r.left:SetText(s.name)
-      r.right:SetText(rowText(m, s, snap.total))
+      if snap.locked then r.right:SetFormattedText(m.rate and s.rate ~= nil and "%s (%s)" or "%s", abbrev(s.amount), abbrev(s.rate))
+      else r.right:SetText(rowText(m, s, snap.total)) end
     end
   end
   f:SetHeight(18 + n * ROWH + (n == 0 and 0 or 2))
@@ -365,7 +378,8 @@ local HELP = [[/metails - show or hide the window
 /metails scale <n>, rows <n>, alpha <0-1>, fontsize <n> - size, rows, opacity, font
 /metails texture <smooth|flat|raid> - bar texture
 /metails autohide <combat|ooc|off> - hide in combat or out of combat
-/metails minimap - show or hide the minimap button]]
+/metails minimap - show or hide the minimap button
+/metails diag - print whether the game is handing over readable numbers]]
 
 local minimapBtn
 local function minimapPos(b)
@@ -432,6 +446,24 @@ function CMD.report(a)
 end
 function CMD.help() print("Metails!\n" .. HELP) end
 
+local events, diagArmed = 0, false
+local function probe(where)
+  local s = session(views()[1], MODES[1].type)
+  local me
+  for _, src in ipairs(s and plain(s.combatSources) and s.combatSources or {}) do
+    if plain(src) and plain(src.isLocalPlayer) and src.isLocalPlayer then me = src end
+  end
+  local function tag(v) return v == nil and "nil" or secret(v) and "secret" or "readable" end
+  print(("Metails! %s: session %s, you %s, total %s, per second %s, duration %s"):format(where, s and "found" or "none", me and "found" or "none",
+    tag(me and me.totalAmount), tag(me and me.amountPerSecond), tag(s and s.durationSeconds)))
+end
+function CMD.diag()
+  print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
+  probe("outside a handler")
+  diagArmed = true
+  print("Metails!: the next damage meter event will print the same check from inside its handler.")
+end
+
 local function buildOptions()
   local panel = CreateFrame("Frame")
   panel.name = "Metails!"
@@ -483,7 +515,7 @@ ev:SetScript("OnEvent", function(_, e)
     refreshHistory()
     applyVisibility()
     snapshotAll(true)
-    C_Timer.NewTicker(1, function() if not UnitAffectingCombat("player") then snapshotAll(true) end end)
+    C_Timer.NewTicker(0.5, function() snapshotAll(true) end)
     for _, name in ipairs({ "DAMAGE_METER_COMBAT_SESSION_UPDATED", "DAMAGE_METER_CURRENT_SESSION_UPDATED", "DAMAGE_METER_RESET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do
       pcall(ev.RegisterEvent, ev, name)
     end
@@ -492,5 +524,9 @@ ev:SetScript("OnEvent", function(_, e)
     refreshHistory(); snapshotAll(true)
   elseif e == "PLAYER_REGEN_ENABLED" then refreshHistory(); applyVisibility(); snapshotAll(true)
   elseif e == "PLAYER_REGEN_DISABLED" then applyVisibility(); snapshotAll(true)
-  else snapshotAll() end
+  else
+    events = events + 1
+    if diagArmed then diagArmed = false; probe("inside " .. e) end
+    snapshotAll()
+  end
 end)

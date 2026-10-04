@@ -5,26 +5,30 @@ L.execute(r"""
 now, incombat, chat, resets = 100, false, {}, 0
 GetTime = function() return now end
 UnitAffectingCombat = function() return incombat end
-C_Spell = { GetSpellTexture = function(id) return "tex" .. id end, GetSpellName = function(id) return "Spell" .. id end }
-C_Timer = { NewTicker = function() end }
+C_Spell = { GetSpellTexture = function(id) return id == SECRET and "tex?" or "tex" .. id end, GetSpellName = function(id) return id == SECRET and "Spell?" or "Spell" .. id end }
+tickers = {}
+C_Timer = { NewTicker = function(_, fn) tickers[#tickers + 1] = fn end }
+SECRET = setmetatable({}, { __tostring = function() return "SECRET" end })
+local function S(v) return incombat and SECRET or v end
+AbbreviateNumbers = function(v) return v == SECRET and "~" or tostring(v) end
 UnitClass = function() return "Mage", "MAGE" end
 RAID_CLASS_COLORS = { MAGE = { r = 0, g = 0, b = 1 } }
 GameTooltip_Hide = function() end
 IsShiftKeyDown, IsInRaid, IsInGroup = function() return false end, function() return false end, function() return true end
 SendChatMessage = function(msg, chan, _, target) chat[#chat + 1] = { msg, chan, target } end
 wipe = function(t) for k in pairs(t) do t[k] = nil end end
-issecretvalue = function() return false end
+issecretvalue = function(v) return v == SECRET end
 SlashCmdList = {}
 Enum = { DamageMeterType = { Dps = 0, DamageDone = 1, DamageTaken = 2, AvoidableDamageTaken = 3, Hps = 4, HealingDone = 5, Absorbs = 6, Interrupts = 7, Dispels = 8, Deaths = 9 },
          DamageMeterSessionType = { Current = 0, Overall = 1, Expired = 2 } }
-local me = { name = "Sam", sourceGUID = "Player-1", isLocalPlayer = true, totalAmount = 1500, amountPerSecond = 150, deathRecapID = 7 }
+local function me() return { name = "Sam", sourceGUID = "Player-1", isLocalPlayer = true, totalAmount = S(1500), amountPerSecond = S(150), deathRecapID = 7 } end
 local bob = { name = "Bob", sourceGUID = "Player-2", isLocalPlayer = false, totalAmount = 3000, amountPerSecond = 300 }
 lastQuery = {}
 C_DamageMeter = {
-  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; return { combatSources = { bob, me }, durationSeconds = 10 } end,
-  GetCombatSessionFromID = function(id, mt) lastQuery = { id = id, mt = mt }; return { combatSources = { me }, durationSeconds = 5 } end,
+  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; return { combatSources = { bob, me() }, durationSeconds = 10 } end,
+  GetCombatSessionFromID = function(id, mt) lastQuery = { id = id, mt = mt }; return { combatSources = { me() }, durationSeconds = 5 } end,
   GetCombatSessionSourceFromType = function(st, mt, guid) return { combatSpells = {
-    { spellID = 133, totalAmount = 1200, amountPerSecond = 120, overkillAmount = 50, combatSpellDetails = { { unitName = "Hogger", amount = 1000 }, { unitName = "Boar", amount = 200 }, { unitName = "", amount = 0 }, { unitName = "Ghost", amount = 0 } } },
+    { spellID = S(133), totalAmount = S(1200), amountPerSecond = S(120), overkillAmount = S(50), combatSpellDetails = { { unitName = "Hogger", amount = 1000 }, { unitName = "Boar", amount = 200 }, { unitName = "", amount = 0 }, { unitName = "Ghost", amount = 0 } } },
     { spellID = 1, totalAmount = 300, amountPerSecond = 30, creatureName = "Kitty", combatSpellDetails = { unitName = "Hogger", amount = 300 } },
     { spellID = 2, totalAmount = 0 } } } end,
   GetCombatSessionSourceFromID = function(id, mt, guid) return { combatSpells = { { spellID = 133, totalAmount = 10, amountPerSecond = 2 } } } end,
@@ -49,6 +53,8 @@ local function stub()
     if k == "GetEffectiveScale" then return function() return 1 end end
     if k == "GetWidth" then return function() return 140 end end
     if k == "SetText" then return function(self, v) self.text = v end end
+    if k == "SetFormattedText" then return function(self, f, ...) self.text = f:format(...) end end
+    if k == "SetValue" then return function(self, v) self.value = v end end
     if k == "SetPoint" then return function(self, ...) self.point = { ... } end end
     if k == "CreateFontString" or k == "CreateTexture" then return function() return stub() end end
     return function() end
@@ -130,6 +136,23 @@ assert list(g.chat.values())[-1][2] == "WHISPER" and list(g.chat.values())[-1][3
 g.now = 101
 fire(ev, "DAMAGE_METER_COMBAT_SESSION_UPDATED")
 assert win.title.text == "Damage Done - Current"
+
+g.incombat = True
+g.now = 110
+g.tickers[1]()
+assert win.rate.text == "~ (~/s)", win.rate.text
+assert rows[1].left.text == "Spell?" and rows[1].right.text == "~ (~)" and g.issecretvalue(rows[1].value), (rows[1].left.text, rows[1].right.text)
+assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30)", rows[2].right.text
+rows[1].scripts.OnEnter(rows[1])
+n_chat = len(g.chat)
+slash("report party")
+assert len(g.chat) == n_chat, "locked snapshot must not be reported"
+slash("diag")
+fire(ev, "DAMAGE_METER_CURRENT_SESSION_UPDATED")
+g.incombat = False
+g.now = 120
+g.tickers[1]()
+assert rows[1].right.text == "1.2k (120, 80.0%)", rows[1].right.text
 
 slash("new")
 assert len(db.windows) == 2 and len(g.windowsOf()) == 2
