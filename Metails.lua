@@ -80,7 +80,9 @@ local function units(sp, out)
   if not plain(d) then return end
   if d.unitName ~= nil then d = { d } end
   for _, u in ipairs(d) do
-    if plain(u) and plain(u.unitName) and u.unitName ~= "" and plain(u.amount) and u.amount > 0 then out[#out + 1] = { name = u.unitName, amount = u.amount } end
+    if plain(u) and u.unitName ~= nil and u.amount ~= nil and (secret(u.amount) or (plain(u.unitName) and u.unitName ~= "" and u.amount > 0)) then
+      out[#out + 1] = { name = u.unitName, amount = u.amount }
+    end
   end
 end
 
@@ -127,7 +129,8 @@ local function snapshot(f)
           if plain(name) and plain(sp.creatureName) and sp.creatureName ~= "" then name = name .. " (" .. sp.creatureName .. ")" end
           local row = { name = name, icon = secret(sp.spellID) and C_Spell.GetSpellTexture(sp.spellID) or icon(sp.spellID), amount = amt, rate = sp.amountPerSecond,
                         overkill = plain(sp.overkillAmount) and sp.overkillAmount > 0 and sp.overkillAmount or nil, units = {} }
-          if secret(amt) then snap.locked = true else units(sp, row.units) end
+          if secret(amt) then snap.locked = true end
+          units(sp, row.units)
           if m.by and not secret(amt) then
             for _, u in ipairs(row.units) do
               local r = byUnit[u.name] or { name = u.name, icon = 132349, amount = 0, units = {} }
@@ -157,22 +160,54 @@ local function headText(m, snap)
   return fmt(snap.total) .. (m.rate and (" (" .. fmt(snap.rate) .. "/s)") or "")
 end
 
+local tip
+
+local function tipLine(i, left, right)
+  local l = tip.lines[i]
+  if not l then
+    l = { left = tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), right = tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") }
+    l.left:SetPoint("TOPLEFT", 8, -(22 + (i - 1) * 14)); l.left:SetJustifyH("LEFT")
+    l.right:SetPoint("TOPRIGHT", -8, -(22 + (i - 1) * 14)); l.right:SetJustifyH("RIGHT")
+    tip.lines[i] = l
+  end
+  l.left:SetText(left); l.right:SetFormattedText("%s", right)
+  l.left:Show(); l.right:Show()
+end
+
 local function rowTip(r)
   local s, m = r.data, r.mode
-  if not plain(s.amount) or not plain(s.name) then return end
-  GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
-  GameTooltip:AddLine(s.name)
-  local function line(k, v) GameTooltip:AddDoubleLine(k, v, 1, 1, 1, 1, 1, 1) end
-  if m.log then GameTooltip:AddLine(("%.0f%% health after"):format(s.pct), 1, 1, 1) end
-  if s.rate then line("Per second", fmt(s.rate)) end
-  if (s.overkill or 0) > 0 then line("Overkill", fmt(s.overkill)) end
-  if s.units and #s.units > 0 then
-    table.sort(s.units, function(a, b) return a.amount > b.amount end)
-    GameTooltip:AddLine(m.tip)
-    for i = 1, min(5, #s.units) do line(s.units[i].name, fmt(s.units[i].amount) .. (" (%.0f%%)"):format(s.units[i].amount / max(s.amount, 1) * 100)) end
+  if not tip then
+    tip = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    tip.isTip, tip.lines = true, {}
+    tip:SetWidth(220); tip:SetFrameStrata("TOOLTIP"); tip:SetClampedToScreen(true)
+    tip:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    tip:SetBackdropColor(0.05, 0.05, 0.05, 0.95); tip:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    tip.title = tip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tip.title:SetPoint("TOPLEFT", 8, -6); tip.title:SetPoint("TOPRIGHT", -8, -6); tip.title:SetJustifyH("LEFT"); tip.title:SetWordWrap(false)
   end
-  GameTooltip:Show()
+  for _, l in ipairs(tip.lines) do l.left:Hide(); l.right:Hide() end
+  tip.title:SetText(s.name)
+  local n = 0
+  local function line(l, v) n = n + 1; tipLine(n, l, v) end
+  if m.log and plain(s.pct) then line("Health after", ("%.0f%%"):format(s.pct)) end
+  if s.rate ~= nil then line("Per second", abbrev(s.rate)) end
+  if s.overkill then line("Overkill", abbrev(s.overkill)) end
+  if s.units and #s.units > 0 then
+    local unlocked = plain(s.amount)
+    for _, u in ipairs(s.units) do unlocked = unlocked and plain(u.amount) end
+    if unlocked then table.sort(s.units, function(a, b) return a.amount > b.amount end) end
+    line(m.tip, "")
+    for i = 1, min(5, #s.units) do
+      local u = s.units[i]
+      line(u.name, unlocked and (fmt(u.amount) .. (" (%.0f%%)"):format(u.amount / max(s.amount, 1) * 100)) or abbrev(u.amount))
+    end
+  end
+  tip:SetHeight(26 + n * 14)
+  tip:ClearAllPoints(); tip:SetPoint("TOPLEFT", r.win, "TOPRIGHT", 4, 0)
+  tip:Show()
 end
+
+local function hideTip() if tip then tip:Hide() end end
 
 local refresh, applyVisibility
 
@@ -269,7 +304,7 @@ local function rowAt(f, i)
   styleText(r.left); styleText(r.right)
   r:EnableMouse(true)
   r:SetScript("OnEnter", rowTip)
-  r:SetScript("OnLeave", GameTooltip_Hide)
+  r:SetScript("OnLeave", hideTip)
   r:SetScript("OnMouseUp", onClick)
   f.rows[i] = r
   return r
