@@ -33,10 +33,20 @@ local BREAKPOINTS = { breakpointData = {
   { breakpoint = 0, significandDivisor = 1, fractionDivisor = 1, abbreviation = "", abbreviationIsGlobal = false },
 } }
 
-local function abbrev(v)
+local RATE_BREAKPOINTS = { breakpointData = {
+  { breakpoint = 1e6, significandDivisor = 1e4, fractionDivisor = 100, abbreviation = "M", abbreviationIsGlobal = false },
+  { breakpoint = 1e3, significandDivisor = 100, fractionDivisor = 10, abbreviation = "k", abbreviationIsGlobal = false },
+  { breakpoint = 0, significandDivisor = 0.1, fractionDivisor = 10, abbreviation = "", abbreviationIsGlobal = false },
+} }
+
+local function fmtRate(n)
+  return n < 1e3 and ("%.1f"):format(n) or fmt(n)
+end
+
+local function abbrev(v, rate)
   if v == nil then return "0" end
-  if plain(v) then return fmt(v) end
-  return AbbreviateNumbers and AbbreviateNumbers(v, BREAKPOINTS) or "?"
+  if plain(v) then return rate and fmtRate(v) or fmt(v) end
+  return AbbreviateNumbers and AbbreviateNumbers(v, rate and RATE_BREAKPOINTS or BREAKPOINTS) or "?"
 end
 
 local function spellName(id)
@@ -153,11 +163,11 @@ end
 
 local function rowText(m, s, tot)
   local pct = s.pct or s.amount / max(tot, 1) * 100
-  return fmt(s.amount) .. " (" .. (m.rate and s.rate and (fmt(s.rate) .. ", ") or "") .. ("%.1f%%)"):format(pct)
+  return fmt(s.amount) .. " (" .. (m.rate and s.rate and (fmtRate(s.rate) .. ", ") or "") .. ("%.1f%%)"):format(pct)
 end
 
 local function headText(m, snap)
-  return fmt(snap.total) .. (m.rate and (" (" .. fmt(snap.rate) .. "/s)") or "")
+  return fmt(snap.total) .. (m.rate and (" (" .. fmtRate(snap.rate) .. "/s)") or "")
 end
 
 local tip
@@ -198,7 +208,7 @@ local function rowTip(r)
   local n = 0
   local function line(l, v) n = n + 1; tipLine(n, l, v) end
   if m.log and plain(s.pct) then line("Health after", ("%.0f%%"):format(s.pct)) end
-  if s.rate ~= nil then line("Per second", abbrev(s.rate)) end
+  if s.rate ~= nil then line("Per second", abbrev(s.rate, true)) end
   if s.overkill then line("Overkill", abbrev(s.overkill)) end
   if s.units and #s.units > 0 then
     local unlocked = plain(s.amount)
@@ -326,7 +336,7 @@ function refresh(f)
     snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {} }
   end
   f.title:SetText(snap.label)
-  if snap.locked then f.rate:SetFormattedText(m.rate and "%s (%s/s)" or "%s", abbrev(snap.total), abbrev(snap.rate))
+  if snap.locked then f.rate:SetFormattedText(m.rate and "%s (%s/s)" or "%s", abbrev(snap.total), abbrev(snap.rate, true))
   else f.rate:SetText(headText(m, snap)) end
   local n = min(#snap.rows, db.opts.rows)
   local top = snap.rows[1] and snap.rows[1].amount or 0
@@ -340,7 +350,7 @@ function refresh(f)
       r:SetValue(s.amount)
       r.icon:SetTexture(s.icon)
       r.left:SetText(s.name)
-      if snap.locked then r.right:SetFormattedText(m.rate and s.rate ~= nil and "%s (%s)" or "%s", abbrev(s.amount), abbrev(s.rate))
+      if snap.locked then r.right:SetFormattedText(m.rate and s.rate ~= nil and "%s (%s)" or "%s", abbrev(s.amount), abbrev(s.rate, true))
       else r.right:SetText(rowText(m, s, snap.total)) end
     end
   end

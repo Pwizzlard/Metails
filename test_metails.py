@@ -87,9 +87,9 @@ def mode(n):
     click(win, "LeftButton")
     assert db.windows[1].mode == n
 
-assert win.title.text == "Damage Done - Current" and win.rate.text == "1.5k (150/s)", (win.title.text, win.rate.text)
-assert rows[1].left.text == "Spell133" and rows[1].right.text == "1.2k (120, 80.0%)", (rows[1].left.text, rows[1].right.text)
-assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30, 20.0%)", rows[2].right.text
+assert win.title.text == "Damage Done - Current" and win.rate.text == "1.5k (150.0/s)", (win.title.text, win.rate.text)
+assert rows[1].left.text == "Spell133" and rows[1].right.text == "1.2k (120.0, 80.0%)", (rows[1].left.text, rows[1].right.text)
+assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30.0, 20.0%)", rows[2].right.text
 assert g.lastQuery.mt == 1, "Damage Done uses the DamageDone meter type"
 assert rows[1].data.overkill == 50 and len(rows[1].data.units) == 2
 
@@ -119,7 +119,7 @@ click(win, "RightButton")
 assert win.title.text == "Damage Done - Overall" and g.lastQuery.st == 1
 click(win, "RightButton")
 assert win.title.text == "Damage Done - Fight 12" and g.lastQuery.id == 12, win.title.text
-assert rows[1].right.text == "10 (2, 0.7%)" and win.rate.text == "1.5k (150/s)", rows[1].right.text
+assert rows[1].right.text == "10 (2.0, 0.7%)" and win.rate.text == "1.5k (150.0/s)", rows[1].right.text
 click(win, "RightButton")
 assert win.title.text == "Damage Done - Hogger" and g.lastQuery.id == 11
 click(win, "RightButton")
@@ -127,8 +127,8 @@ assert db.windows[1].view == 1
 
 slash("report party 3")
 chat = list(g.chat.values())
-assert len(chat) == 3 and chat[0][2] == "PARTY" and chat[0][1] == "Metails! Damage Done - Current: 1.5k (150/s)", chat[0][1]
-assert chat[1][1] == "1. Spell133  1.2k (120, 80.0%)", chat[1][1]
+assert len(chat) == 3 and chat[0][2] == "PARTY" and chat[0][1] == "Metails! Damage Done - Current: 1.5k (150.0/s)", chat[0][1]
+assert chat[1][1] == "1. Spell133  1.2k (120.0, 80.0%)", chat[1][1]
 slash("report say")
 assert list(g.chat.values())[-1][2] == "SAY" and " | 1. Spell133" in list(g.chat.values())[-1][1]
 slash("report Bob 1")
@@ -143,7 +143,7 @@ g.now = 110
 g.tickers[1]()
 assert win.rate.text == "~ (~/s)", win.rate.text
 assert rows[1].left.text == "Spell?" and rows[1].right.text == "~ (~)" and g.issecretvalue(rows[1].value), (rows[1].left.text, rows[1].right.text)
-assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30)", rows[2].right.text
+assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30.0)", rows[2].right.text
 rows[1].scripts.OnEnter(rows[1])
 tip = [fr for fr in list(g.frames.values()) if fr.isTip][0]
 assert tip.title.text == "Spell?" and tip.lines[1].left.text == "Per second" and tip.lines[1].right.text == "~", (tip.title.text, tip.lines[1].right.text)
@@ -157,9 +157,9 @@ fire(ev, "DAMAGE_METER_CURRENT_SESSION_UPDATED")
 g.incombat = False
 g.now = 120
 g.tickers[1]()
-assert rows[1].right.text == "1.2k (120, 80.0%)", rows[1].right.text
+assert rows[1].right.text == "1.2k (120.0, 80.0%)", rows[1].right.text
 rows[1].scripts.OnEnter(rows[1])
-assert tip.title.text == "Spell133" and tip.lines[1].right.text == "120" and tip.lines[2].left.text == "Overkill" and tip.lines[2].right.text == "50"
+assert tip.title.text == "Spell133" and tip.lines[1].right.text == "120.0" and tip.lines[2].left.text == "Overkill" and tip.lines[2].right.text == "50"
 assert tip.lines[3].left.text == "Targets" and tip.lines[4].left.text == "Hogger" and tip.lines[4].right.text == "1.0k (83%)", tip.lines[4].right.text
 
 slash("new")
