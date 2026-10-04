@@ -56,6 +56,8 @@ local function stub()
     if k == "GetWidth" then return function() return 140 end end
     if k == "GetStatusBarTexture" then return function() return stub() end end
     if k == "SetText" then return function(self, v) self.text = v end end
+    if k == "Show" then return function(self) self.shown = true end end
+    if k == "Hide" then return function(self) self.shown = false end end
     if k == "SetFormattedText" then return function(self, f, ...) self.text = f:format(...) end end
     if k == "SetValue" then return function(self, v) self.value = v end end
     if k == "SetPoint" then return function(self, ...) self.point = { ... } end end
@@ -209,7 +211,7 @@ e = db.best["Sam-Beta"].Hogger
 assert e.best.total == 1500 and e.best.time == 10 and e.best.spells.Spell133 == 1200 and e.last.time == 90, dict(e.last)
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
 race = [fr for fr in list(g.frames.values()) if fr.bars is not None][0]
-assert race.title.text == "Race: Hogger" and race.bars[1].text.text == "Best  1.5k in 10s (150.0/s)" and race.bars[2].text.text == "Previous  1.5k in 90s (150.0/s)" and race.bars[3].text.text == "Current  1.5k in 90s", (race.bars[1].text.text, race.bars[2].text.text)
+assert race.title.text == "Race: Hogger" and race.bars[1].text.text == "Best pace  1.5k in 10s (150.0/s)" and race.bars[2].text.text == "Previous pace  1.5k in 90s (150.0/s)" and race.bars[3].text.text == "Current  1.5k in 90s", (race.bars[1].text.text, race.bars[2].text.text)
 assert race.bars[4] is None
 g.incombat = True
 g.tickers[1]()
@@ -224,6 +226,15 @@ fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
 g.tickers[1]()
 assert race.bars[3].text.text.startswith("Current"), race.bars[3].text.text
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
+assert db.opts.racing is True
+slash("racing off")
+fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
+assert race.shown is False, "racing off must not show the box"
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 0)
+slash("racing on")
+fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
+assert race.shown is True
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 0)
 slash("bests")
 slash("forget Hogger")
 assert db.best["Sam-Beta"].Hogger is None

@@ -285,6 +285,8 @@ local function reset()
   snapshotAll(true)
 end
 
+local CMD = {}
+
 local function openMenu(f)
   MenuUtil.CreateContextMenu(f, function(_, root)
     root:CreateTitle("Metails!")
@@ -298,6 +300,7 @@ local function openMenu(f)
     end
     root:CreateButton("Report to chat", function() report(f) end)
     root:CreateCheckbox("Locked", function() return f.cfg.locked end, function() f.cfg.locked = not f.cfg.locked end)
+    root:CreateCheckbox("Boss racing", function() return db.opts.racing end, function() CMD.racing("") end)
     root:CreateButton("Reset data", reset)
   end)
 end
@@ -507,8 +510,8 @@ function updateRace()
     if pair[2] then
       n = n + 1
       local b = raceBar(n, pair[1])
-      b:SetMinMaxValues(0, top); b:SetValue(pair[2].total)
-      b.text:SetText(("%s  %s in %ss (%s/s)"):format(pair[1], fmt(pair[2].total), fmt(pair[2].time), fmtRate(pair[2].rate)))
+      b:SetMinMaxValues(0, pair[2].time * top / max(pair[2].total, 1)); b:SetValue(dur)
+      b.text:SetText(("%s pace  %s in %ss (%s/s)"):format(pair[1], fmt(pair[2].total), fmt(pair[2].time), fmtRate(pair[2].rate)))
     end
   end
   n = n + 1
@@ -521,7 +524,7 @@ end
 
 local function startRace(name)
   local e = entry(name)
-  if not e or not e.last or max(e.last.time, e.best and e.best.time or 0) <= 60 then return end
+  if not db.opts.racing or not e or not e.last or max(e.last.time, e.best and e.best.time or 0) <= 60 then return end
   racing = e
   raceFrame()
   race.title:SetText("Race: " .. name)
@@ -582,7 +585,8 @@ local HELP = [[/metails - show or hide the window
 /metails minimap - show or hide the minimap button
 /metails diag - print whether the game is handing over readable numbers
 /metails bests - list your boss records (set by killing a dungeon or raid boss without dying)
-/metails forget <boss> - delete that record]]
+/metails forget <boss> - delete that record
+/metails racing [on|off] - show the race box when pulling a boss you have killed before]]
 
 local minimapBtn
 local function minimapPos(b)
@@ -624,7 +628,6 @@ local function buildMinimap()
   minimapBtn = b
 end
 
-local CMD = {}
 CMD[""] = Metails_Toggle
 CMD.reset = reset
 function CMD.minimap() db.opts.minimapHidden = not db.opts.minimapHidden; minimapBtn:SetShown(not db.opts.minimapHidden) end
@@ -658,6 +661,11 @@ function CMD.bests()
     end
   end
   if n == 0 then print("Metails!: no boss records yet. Kill a dungeon or raid boss without dying to set one.") end
+end
+function CMD.racing(a)
+  if a == "on" or a == "off" then db.opts.racing = a == "on" elseif a == "" then db.opts.racing = not db.opts.racing else print("Metails!: racing on or off") return end
+  if not db.opts.racing then racing = nil; if race then race:Hide() end end
+  print("Metails!: boss racing " .. (db.opts.racing and "on" or "off"))
 end
 function CMD.forget(a)
   if bests()[a] then bests()[a] = nil; print("Metails!: forgot " .. a) else print("Metails!: no record for '" .. a .. "'") end
@@ -709,7 +717,7 @@ local function buildOptions()
   body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12); body:SetWidth(580); body:SetJustifyH("LEFT")
   body:SetText("A personal combat meter. Left-click the window for the next view, right-click for the menu, mouse wheel for fights, drag to move.\n\n" .. HELP)
   local x = 0
-  for _, b in ipairs({ { "Show / hide", Metails_Toggle }, { "New window", CMD.new }, { "Minimap button", CMD.minimap }, { "Reset data", reset } }) do
+  for _, b in ipairs({ { "Show / hide", Metails_Toggle }, { "New window", CMD.new }, { "Minimap button", CMD.minimap }, { "Boss racing", function() CMD.racing("") end }, { "Reset data", reset } }) do
     local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     btn:SetSize(130, 24); btn:SetPoint("TOPLEFT", body, "BOTTOMLEFT", x, -16); btn:SetText(b[1]); btn:SetScript("OnClick", b[2])
     x = x + 136
@@ -746,7 +754,8 @@ ev:SetScript("OnEvent", function(_, e, ...)
     db.opts = { rows = num(o.rows, 1, 40, 10), alpha = num(o.alpha, 0, 1, 0.55), fontsize = num(o.fontsize, 6, 20, 10),
                 texture = TEXTURES[o.texture] and o.texture or "smooth", autohide = o.autohide or "off",
                 minimap = num(o.minimap, -360, 360, 220), minimapHidden = o.minimapHidden == true,
-                racePos = type(o.racePos) == "table" and type(o.racePos[3]) == "number" and o.racePos or { "CENTER", "CENTER", 300, -260 } }
+                racePos = type(o.racePos) == "table" and type(o.racePos[3]) == "number" and o.racePos or { "CENTER", "CENTER", 300, -260 },
+                racing = o.racing ~= false }
     for _, w in ipairs(db.windows) do newWindow(w) end
     buildMinimap(); buildOptions()
     refreshHistory()
