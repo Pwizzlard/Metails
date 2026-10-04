@@ -136,10 +136,12 @@ local function snapshot(f)
         local amt = plain(sp) and sp.totalAmount or nil
         if amt ~= nil and (secret(amt) or amt > 0) and sp.spellID ~= nil then
           local name = secret(sp.spellID) and C_Spell.GetSpellName(sp.spellID) or spellName(sp.spellID)
-          if plain(name) and plain(sp.creatureName) and sp.creatureName ~= "" then name = name .. " (" .. sp.creatureName .. ")" end
+          local pet = plain(sp.creatureName) and sp.creatureName ~= ""
+          if plain(name) and pet then name = name .. " (" .. sp.creatureName .. ")" end
           local row = { name = name, icon = secret(sp.spellID) and C_Spell.GetSpellTexture(sp.spellID) or icon(sp.spellID), amount = amt, rate = sp.amountPerSecond,
                         overkill = plain(sp.overkillAmount) and sp.overkillAmount > 0 and sp.overkillAmount or nil, units = {},
-                        avoidable = plain(sp.isAvoidable) and sp.isAvoidable or nil, deadly = plain(sp.isDeadly) and sp.isDeadly or nil }
+                        avoidable = plain(sp.isAvoidable) and sp.isAvoidable or nil, deadly = plain(sp.isDeadly) and sp.isDeadly or nil,
+                        spellID = sp.spellID, pet = pet or nil }
           if secret(amt) then snap.locked = true end
           units(sp, row.units)
           if m.by and not secret(amt) then
@@ -156,6 +158,8 @@ local function snapshot(f)
       if not snap.locked then
         table.sort(snap.rows, function(a, b) return a.amount > b.amount end)
         if m.by then snap.total = 0; for _, r in ipairs(snap.rows) do snap.total = snap.total + r.amount end end
+        snap.pets = 0
+        for _, r in ipairs(snap.rows) do if r.pet then snap.pets = snap.pets + r.amount end end
       end
     end
   end
@@ -217,6 +221,7 @@ local HOW = { { "Left-click", "next view" }, { "Shift-click", "previous view" },
 local function windowTip(f)
   showTip(f, f, "Metails!", function(line)
     if f.snap and f.snap.time ~= nil then line("Fight length (s)", abbrev(f.snap.time)) end
+    if f.snap and (f.snap.pets or 0) > 0 then line("From pets", fmt(f.snap.pets) .. (" (%.0f%%)"):format(f.snap.pets / max(f.snap.total, 1) * 100)) end
     for _, h in ipairs(HOW) do line(h[1], h[2]) end
   end)
 end
@@ -228,6 +233,19 @@ local function rowTip(r)
   if s.rate ~= nil then line("Per second", abbrev(s.rate, true)) end
   if s.overkill then line("Overkill", abbrev(s.overkill)) end
   if s.avoidable then line("Avoidable", "yes") end
+  if plain(s.spellID) and plain(s.amount) and (views()[r.win.cfg.view] or {}).type ~= DMS.Overall and not m.by and not m.log then
+    local ov, mine = { type = DMS.Overall }, nil
+    local sess = session(ov, m.type)
+    for _, src in ipairs(sess and plain(sess.combatSources) and sess.combatSources or {}) do
+      if plain(src) and plain(src.isLocalPlayer) and src.isLocalPlayer and plain(src.totalAmount) then mine = src.totalAmount end
+    end
+    for _, sp in ipairs(mine and spells(ov, m.type) or {}) do
+      if plain(sp) and plain(sp.spellID) and sp.spellID == s.spellID and plain(sp.totalAmount) then
+        line("Overall", fmt(sp.totalAmount) .. (" (%.1f%%)"):format(sp.totalAmount / max(mine, 1) * 100))
+        break
+      end
+    end
+  end
   if s.deadly then line("Killing blow", "yes") end
   if s.units and #s.units > 0 then
     local unlocked = plain(s.amount)
