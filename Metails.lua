@@ -19,7 +19,7 @@ end
 local WIDTH, ROWH = 230, 17
 local TEXTURES = { smooth = "Interface\\TargetingFrame\\UI-StatusBar", flat = "Interface\\Buttons\\WHITE8x8", raid = "Interface\\RaidFrame\\Raid-Bar-Hp-Fill" }
 local CHANNELS = { say = "SAY", yell = "YELL", party = "PARTY", raid = "RAID", guild = "GUILD", officer = "OFFICER", instance = "INSTANCE_CHAT" }
-local db, windows, history, lastSnap = nil, {}, {}, 0
+local db, windows, history, lastSnap, captured = nil, {}, {}, 0, nil
 
 local function fmt(n)
   if n >= 1e6 then return ("%.2fM"):format(n / 1e6) end
@@ -121,6 +121,7 @@ local function snapshot(f)
   local snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {}, time = s.durationSeconds }
   if me then
     if me.totalAmount ~= nil then snap.total = me.totalAmount end
+    if secret(snap.total) then captured = snap.total end
     if me.amountPerSecond ~= nil then snap.rate = me.amountPerSecond end
     snap.locked = secret(snap.total) or secret(snap.rate)
     if m.log then
@@ -255,16 +256,12 @@ end
 
 local function hideTip(r) if tip and not r:IsMouseOver() then tip:Hide() end end
 
-local refresh, applyVisibility, updateRace, captured
+local refresh, applyVisibility, updateRace
 
 local function snapshotAll(force)
   local now = GetTime()
   if not force and now - lastSnap < 0.25 then return end
   lastSnap = now
-  if UnitAffectingCombat("player") then
-    local me = windows[1] and windows[1].snap and windows[1].snap.total
-    if me ~= nil and secret(me) then captured = me end
-  end
   for _, f in ipairs(windows) do if f:IsShown() then snapshot(f); refresh(f) end end
   if updateRace then updateRace() end
 end
@@ -704,8 +701,8 @@ function CMD.diag()
   print("Metails!: events the client refused: " .. (#refused > 0 and table.concat(refused, ", ") or "none"))
   print("Metails!: a total captured mid-fight is now " .. (captured == nil and "not captured yet" or secret(captured) and "still locked" or ("readable = " .. fmt(captured))))
   local r = windows[1].rows[1]
-  local tex = r and r:IsShown() and r:GetStatusBarTexture()
-  local w = tex and tex:GetWidth()
+  local tex = r and r:IsShown() and r:GetStatusBarTexture() or nil
+  local w = tex and tex:GetWidth() or nil
   print(("Metails!: first bar fill width %s%s"):format(w == nil and "nil" or secret(w) and "secret" or "readable", plain(w) and (" = " .. ("%.1f"):format(w) .. " of " .. ("%.0f"):format(r:GetWidth())) or ""))
   local ok, err = pcall(probe, "outside a handler")
   if not ok then print("Metails! diag error: " .. tostring(err)) end
