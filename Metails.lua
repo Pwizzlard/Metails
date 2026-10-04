@@ -27,10 +27,16 @@ local function fmt(n)
   return ("%.0f"):format(n)
 end
 
+local BREAKPOINTS = { breakpointData = {
+  { breakpoint = 1e6, significandDivisor = 1e4, fractionDivisor = 100, abbreviation = "M", abbreviationIsGlobal = false },
+  { breakpoint = 1e3, significandDivisor = 100, fractionDivisor = 10, abbreviation = "k", abbreviationIsGlobal = false },
+  { breakpoint = 0, significandDivisor = 1, fractionDivisor = 1, abbreviation = "", abbreviationIsGlobal = false },
+} }
+
 local function abbrev(v)
   if v == nil then return "0" end
   if plain(v) then return fmt(v) end
-  return AbbreviateNumbers and AbbreviateNumbers(v) or "?"
+  return AbbreviateNumbers and AbbreviateNumbers(v, BREAKPOINTS) or "?"
 end
 
 local function spellName(id)
@@ -115,7 +121,7 @@ local function snapshot(f)
     else
       local byUnit = {}
       for _, sp in ipairs(spells(v, m.type, me) or {}) do
-        local amt = plain(sp) and sp.totalAmount
+        local amt = plain(sp) and sp.totalAmount or nil
         if amt ~= nil and (secret(amt) or amt > 0) and sp.spellID ~= nil then
           local name = secret(sp.spellID) and C_Spell.GetSpellName(sp.spellID) or spellName(sp.spellID)
           if plain(name) and plain(sp.creatureName) and sp.creatureName ~= "" then name = name .. " (" .. sp.creatureName .. ")" end
@@ -344,7 +350,7 @@ local function newWindow(cfg)
   f.close:SetNormalFontObject("GameFontNormalSmall"); f.close:SetText("x")
   f.close:SetScript("OnClick", function() cfg.hidden = true; applyVisibility() end)
   f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  f.title:SetPoint("TOPLEFT", 4, -3); f.title:SetJustifyH("LEFT")
+  f.title:SetPoint("TOPLEFT", 4, -3); f.title:SetJustifyH("LEFT"); f.title:SetWordWrap(false)
   f.rate = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   f.rate:SetPoint("RIGHT", f.close, "LEFT", -3, 0)
   f.title:SetPoint("RIGHT", f.rate, "LEFT", -4, 0)
