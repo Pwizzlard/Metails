@@ -29,8 +29,8 @@ C_DamageMeter = {
   GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; return { combatSources = { bob, me() }, durationSeconds = 10 } end,
   GetCombatSessionFromID = function(id, mt) lastQuery = { id = id, mt = mt }; return { combatSources = { me() }, durationSeconds = 5 } end,
   GetCombatSessionSourceFromType = function(st, mt, guid) return { combatSpells = {
-    { spellID = S(133), totalAmount = S(1200), amountPerSecond = S(120), overkillAmount = S(50), combatSpellDetails = { { unitName = "Hogger", amount = 1000 }, { unitName = "Boar", amount = 200 }, { unitName = "", amount = 0 }, { unitName = "Ghost", amount = 0 } } },
-    { spellID = 1, totalAmount = 300, amountPerSecond = 30, creatureName = "Kitty", combatSpellDetails = { unitName = "Hogger", amount = 300 } },
+    { spellID = S(133), totalAmount = S(1200), amountPerSecond = S(120), overkillAmount = S(50), combatSpellDetails = { unitName = "Hogger", amount = 1200, isMob = true } },
+    { spellID = 1, totalAmount = 300, amountPerSecond = 30, creatureName = "Kitty", combatSpellDetails = { unitName = "Kitty", amount = 300, isPet = true } },
     { spellID = 2, totalAmount = 0 } } } end,
   GetCombatSessionSourceFromID = function(id, mt, guid) return { combatSpells = { { spellID = 133, totalAmount = 10, amountPerSecond = 2 } } } end,
   GetAvailableCombatSessions = function() return { { sessionID = 11, name = "Hogger" }, { sessionID = 12, name = "" } } end,
@@ -91,12 +91,16 @@ assert win.title.text == "Damage Done - Current" and win.rate.text == "1.5k (150
 assert rows[1].left.text == "Spell133" and rows[1].right.text == "1.2k (120.0, 80.0%)", (rows[1].left.text, rows[1].right.text)
 assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30.0, 20.0%)", rows[2].right.text
 assert g.lastQuery.mt == 1, "Damage Done uses the DamageDone meter type"
-assert rows[1].data.overkill == 50 and len(rows[1].data.units) == 2
+assert rows[1].data.overkill == 50 and rows[1].data["from"].name == "Hogger" and rows[2].data["from"].pet is True
 
 mode(3)
 assert win.title.text == "Damage Taken by Source - Current", win.title.text
-assert rows[1].left.text == "Hogger" and rows[1].right.text == "1.3k (86.7%)", (rows[1].left.text, rows[1].right.text)
-assert rows[2].left.text == "Boar" and rows[2].right.text == "200 (13.3%)", rows[2].right.text
+assert rows[1].left.text == "Hogger" and rows[1].right.text == "1.2k (80.0%)", (rows[1].left.text, rows[1].right.text)
+assert rows[2].left.text == "Kitty" and rows[2].right.text == "300 (20.0%)", rows[2].right.text
+rows[1].scripts.OnEnter(rows[1])
+tipA = [fr for fr in list(g.frames.values()) if fr.isTip][0]
+assert tipA.title.text == "Hogger" and tipA.lines[1].left.text == "Spells" and tipA.lines[2].left.text == "Spell133" and tipA.lines[2].right.text == "1.2k (100%)", tipA.lines[1].left.text
+rows[1].scripts.OnLeave(rows[1])
 assert g.lastQuery.mt == 2
 
 db.windows[1].mode = 3
@@ -147,7 +151,6 @@ assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30.
 rows[1].scripts.OnEnter(rows[1])
 tip = [fr for fr in list(g.frames.values()) if fr.isTip][0]
 assert tip.title.text == "Spell?" and tip.lines[1].left.text == "Per second" and tip.lines[1].right.text == "~", (tip.title.text, tip.lines[1].right.text)
-assert tip.lines[2].left.text == "Targets" and tip.lines[3].left.text == "Hogger" and tip.lines[3].right.text == "1.0k", (tip.lines[3].left.text, tip.lines[3].right.text)
 rows[1].scripts.OnLeave(rows[1])
 win.scripts.OnEnter(win)
 assert tip.title.text == "Metails!" and tip.lines[1].left.text == "Fight length (s)" and tip.lines[1].right.text == "10" and tip.lines[2].left.text == "Left-click" and tip.lines[7].left.text == "/metails help", tip.lines[1].left.text
@@ -164,7 +167,8 @@ assert rows[1].right.text == "1.2k (120.0, 80.0%)", rows[1].right.text
 rows[1].scripts.OnEnter(rows[1])
 assert tip.title.text == "Spell133" and tip.lines[1].right.text == "120.0" and tip.lines[2].left.text == "Overkill" and tip.lines[2].right.text == "50"
 assert tip.lines[3].left.text == "Overall" and tip.lines[3].right.text == "1.2k (80.0%)", tip.lines[3].right.text
-assert tip.lines[4].left.text == "Targets" and tip.lines[5].left.text == "Hogger" and tip.lines[5].right.text == "1.0k (83%)", tip.lines[5].right.text
+rows[2].scripts.OnEnter(rows[2])
+assert tip.title.text == "Spell1 (Kitty)" and tip.lines[3].left.text == "Cast by" and tip.lines[3].right.text == "Kitty", tip.lines[3].left.text
 
 slash("new")
 assert len(db.windows) == 2 and len(g.windowsOf()) == 2

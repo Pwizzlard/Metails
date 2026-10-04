@@ -4,7 +4,7 @@ local secret = issecretvalue or function() return false end
 local function plain(v) return v ~= nil and not secret(v) end
 local DMT, DMS = Enum and Enum.DamageMeterType, Enum and Enum.DamageMeterSessionType
 local MODES = {}
-local function mode(label, t, kind, tip) if t ~= nil then MODES[#MODES + 1] = { label = label, type = t, rate = kind == "rate", by = kind == "by", log = kind == "log", tip = tip or "Targets" } end end
+local function mode(label, t, kind, tip) if t ~= nil then MODES[#MODES + 1] = { label = label, type = t, rate = kind == "rate", by = kind == "by", log = kind == "log", tip = tip } end end
 if DMT then
   mode("Damage Done", DMT.DamageDone or DMT.Dps, "rate")
   mode("Damage Taken", DMT.DamageTaken, "rate", "From")
@@ -85,15 +85,10 @@ local function spells(v, t)
   return ok and plain(s) and plain(s.combatSpells) and s.combatSpells or nil
 end
 
-local function units(sp, out)
+local function unit(sp)
   local d = sp.combatSpellDetails
-  if not plain(d) then return end
-  if d.unitName ~= nil then d = { d } end
-  for _, u in ipairs(d) do
-    if plain(u) and u.unitName ~= nil and u.amount ~= nil and (secret(u.amount) or u.amount > 0) and (secret(u.unitName) or u.unitName ~= "") then
-      out[#out + 1] = { name = u.unitName, amount = u.amount, pet = plain(u.isPet) and u.isPet }
-    end
-  end
+  if not plain(d) or d.unitName == nil or (plain(d.unitName) and d.unitName == "") then return nil end
+  return { name = d.unitName, pet = plain(d.isPet) and d.isPet or nil, mob = plain(d.isMob) and d.isMob or nil }
 end
 
 local function deathRows(recap, rows)
@@ -139,18 +134,18 @@ local function snapshot(f)
           local pet = plain(sp.creatureName) and sp.creatureName ~= ""
           if plain(name) and pet then name = name .. " (" .. sp.creatureName .. ")" end
           local row = { name = name, icon = secret(sp.spellID) and C_Spell.GetSpellTexture(sp.spellID) or icon(sp.spellID), amount = amt, rate = sp.amountPerSecond,
-                        overkill = plain(sp.overkillAmount) and sp.overkillAmount > 0 and sp.overkillAmount or nil, units = {},
+                        overkill = plain(sp.overkillAmount) and sp.overkillAmount > 0 and sp.overkillAmount or nil, from = unit(sp),
                         avoidable = plain(sp.isAvoidable) and sp.isAvoidable or nil, deadly = plain(sp.isDeadly) and sp.isDeadly or nil,
                         spellID = sp.spellID, pet = pet or nil }
           if secret(amt) then snap.locked = true end
-          units(sp, row.units)
-          if m.by and not secret(amt) then
-            for _, u in ipairs(row.units) do
-              local r = byUnit[u.name] or { name = u.name, icon = 132349, amount = 0, units = {} }
-              byUnit[u.name] = r
-              r.amount = r.amount + u.amount
-              r.units[#r.units + 1] = { name = row.name, amount = u.amount }
-            end
+          if m.by and row.from and plain(row.from.name) and plain(amt) then
+            local r = byUnit[row.from.name] or { name = row.from.name, icon = row.icon, amount = 0, spells = {} }
+            byUnit[row.from.name] = r
+            r.amount = r.amount + amt
+            r.spells[#r.spells + 1] = { name = row.name, amount = amt }
+          elseif m.by and row.from then
+            row.name = row.from.name
+            snap.rows[#snap.rows + 1] = row
           else snap.rows[#snap.rows + 1] = row end
         end
       end
@@ -247,14 +242,12 @@ local function rowTip(r)
     end
   end
   if s.deadly then line("Killing blow", "yes") end
-  if s.units and #s.units > 0 then
-    local unlocked = plain(s.amount)
-    for _, u in ipairs(s.units) do unlocked = unlocked and plain(u.amount) end
-    if unlocked then table.sort(s.units, function(a, b) return a.amount > b.amount end) end
-    line(m.tip, "")
-    for i = 1, min(5, #s.units) do
-      local u = s.units[i]
-      line(u.name, unlocked and (fmt(u.amount) .. (" (%.0f%%)"):format(u.amount / max(s.amount, 1) * 100)) or abbrev(u.amount))
+  if s.from and (m.tip == "From" or s.from.pet) then line(m.tip == "From" and "From" or "Cast by", s.from.name) end
+  if s.spells and #s.spells > 0 then
+    table.sort(s.spells, function(a, b) return a.amount > b.amount end)
+    line("Spells", "")
+    for i = 1, min(5, #s.spells) do
+      line(s.spells[i].name, fmt(s.spells[i].amount) .. (" (%.0f%%)"):format(s.spells[i].amount / max(s.amount, 1) * 100))
     end
   end
   end)
