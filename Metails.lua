@@ -460,34 +460,63 @@ local function raceFrame()
   race:SetPoint("TOPLEFT", windows[1], "BOTTOMLEFT", 0, -4)
   race.title = race:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   race.title:SetPoint("TOPLEFT", 4, -3); race.title:SetPoint("TOPRIGHT", -4, -3); race.title:SetJustifyH("LEFT"); race.title:SetWordWrap(false)
-  for i, key in ipairs({ "dmg", "time" }) do
-    local b = CreateFrame("StatusBar", nil, race)
-    b:SetSize(WIDTH - 8, 11); b:SetPoint("TOPLEFT", 4, -(16 + (i - 1) * 13))
-    b:SetStatusBarTexture(TEXTURES[db.opts.texture])
-    b:SetStatusBarColor(i == 1 and 0.2 or 0.85, i == 1 and 0.75 or 0.55, 0.2, 0.9)
-    b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.text:SetPoint("LEFT", 3, 0)
-    race[key] = b
-  end
+  race.bars = {}
   return race
 end
+
+local COLORS = { Best = { 0.2, 0.75, 0.2 }, Previous = { 0.85, 0.55, 0.2 }, Current = { 0.3, 0.6, 0.9 } }
+
+local function raceBar(i, label)
+  local b = race.bars[i]
+  if not b then
+    b = CreateFrame("StatusBar", nil, race)
+    b:SetSize(WIDTH - 8, 11); b:SetPoint("TOPLEFT", 4, -(16 + (i - 1) * 13))
+    b:SetStatusBarTexture(TEXTURES[db.opts.texture])
+    b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    b.text:SetPoint("LEFT", 3, 0)
+    race.bars[i] = b
+  end
+  b:SetStatusBarColor(COLORS[label][1], COLORS[label][2], COLORS[label][3], 0.9)
+  b:Show()
+  return b
+end
+
+local function entry(name)
+  local e = bests()[name]
+  if e and e.total then e = { best = e, last = e }; bests()[name] = e end
+  return e
+end
+
+local function same(a, b) return a and b and a.total == b.total and a.time == b.time and a.date == b.date end
 
 function updateRace()
   if not racing or not race then return end
   local me, s = myRow(views()[1], MODES[1].type)
   local total, dur = me and me.totalAmount or 0, s and s.durationSeconds or 0
-  race.dmg:SetMinMaxValues(0, racing.total); race.dmg:SetValue(total)
-  race.dmg.text:SetFormattedText("Damage  %s of %s", abbrev(total), fmt(racing.total))
-  race.time:SetMinMaxValues(0, racing.time); race.time:SetValue(dur)
-  race.time.text:SetFormattedText("Time  %ss of %ss", abbrev(dur), fmt(racing.time))
+  local top = max(racing.best and racing.best.total or 0, racing.last and racing.last.total or 0, 1)
+  local n = 0
+  for _, pair in ipairs({ { "Best", racing.best }, { "Previous", not same(racing.best, racing.last) and racing.last or nil } }) do
+    if pair[2] then
+      n = n + 1
+      local b = raceBar(n, pair[1])
+      b:SetMinMaxValues(0, top); b:SetValue(pair[2].total)
+      b.text:SetText(("%s  %s in %ss (%s/s)"):format(pair[1], fmt(pair[2].total), fmt(pair[2].time), fmtRate(pair[2].rate)))
+    end
+  end
+  n = n + 1
+  local cur = raceBar(n, "Current")
+  cur:SetMinMaxValues(0, top); cur:SetValue(total)
+  cur.text:SetFormattedText("Current  %s in %ss", abbrev(total), abbrev(dur))
+  for i = n + 1, #race.bars do race.bars[i]:Hide() end
+  race:SetHeight(18 + n * 13)
 end
 
 local function startRace(name)
-  local best = bests()[name]
-  if not best then return end
-  racing = best
+  local e = entry(name)
+  if not e or not e.last then return end
+  racing = e
   raceFrame()
-  race.title:SetText(("vs best %s: %s in %ss"):format(name, fmt(best.total), fmt(best.time)))
+  race.title:SetText(name)
   race:Show()
   updateRace()
 end
@@ -495,17 +524,20 @@ end
 local function recordBoss(name)
   local me, s = myRow(views()[1], MODES[1].type)
   if not me or not plain(me.totalAmount) or not plain(s.durationSeconds) then return false end
-  local deaths = DMT.Deaths and myRow(views()[1], DMT.Deaths)
-  if deaths and plain(deaths.totalAmount) and deaths.totalAmount > 0 then print("Metails!: " .. name .. " down, but you died, so it doesn't count as a best.") return true end
   local rec = { total = me.totalAmount, rate = plain(me.amountPerSecond) and me.amountPerSecond or 0, time = s.durationSeconds, date = date("%Y-%m-%d"), spells = {} }
   for _, sp in ipairs(spells(views()[1], MODES[1].type) or {}) do
     if plain(sp) and plain(sp.spellID) and plain(sp.totalAmount) then rec.spells[spellName(sp.spellID)] = sp.totalAmount end
   end
-  local best = bests()[name]
+  local e = entry(name) or {}
+  bests()[name] = e
+  local best = e.best
   if best then
     print(("Metails!: %s: %s in %ss, best was %s in %ss (%+.1f%%)"):format(name, fmt(rec.total), fmt(rec.time), fmt(best.total), fmt(best.time), (rec.total / max(best.total, 1) - 1) * 100))
   end
-  if not best or rec.total > best.total then bests()[name] = rec; print("Metails!: new personal best on " .. name .. ": " .. fmt(rec.total) .. " in " .. fmt(rec.time) .. "s") end
+  e.last = rec
+  local deaths = DMT.Deaths and myRow(views()[1], DMT.Deaths)
+  if deaths and plain(deaths.totalAmount) and deaths.totalAmount > 0 then print("Metails!: you died on that kill, so it can't be a best.")
+  elseif not best or rec.total > best.total then e.best = rec; print("Metails!: new personal best on " .. name .. ": " .. fmt(rec.total) .. " in " .. fmt(rec.time) .. "s") end
   return true
 end
 
@@ -610,7 +642,13 @@ end
 function CMD.help() print("Metails!\n" .. HELP) end
 function CMD.bests()
   local n = 0
-  for name, b in pairs(bests()) do n = n + 1; print(("Metails!: %s - %s in %ss (%s/s) on %s"):format(name, fmt(b.total), fmt(b.time), fmtRate(b.rate), b.date)) end
+  for name in pairs(bests()) do
+    local e = entry(name)
+    for _, pair in ipairs({ { "best", e.best }, { "previous", e.last } }) do
+      local b = pair[2]
+      if b then n = n + 1; print(("Metails!: %s %s - %s in %ss (%s/s) on %s"):format(name, pair[1], fmt(b.total), fmt(b.time), fmtRate(b.rate), b.date)) end
+    end
+  end
   if n == 0 then print("Metails!: no boss records yet. Kill a dungeon or raid boss without dying to set one.") end
 end
 function CMD.forget(a)

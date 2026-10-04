@@ -21,7 +21,7 @@ During a fight the client hands addons locked numbers. Metails! still draws them
 - Open a second window to watch damage and healing at once.
 - Hide automatically in or out of combat, change rows, opacity, bar texture and font size.
 - Minimap button, a keybind, and an entry under Options, AddOns with the command list and the main buttons.
-- Boss records: kill a dungeon or raid boss without dying and your damage, rate, time and spells are saved. Next time that boss starts, a strip under the window races your live damage and time against the record, and the kill prints how you did and updates the record if you beat it.
+- Boss records: kill a dungeon or raid boss without dying and your damage, rate, time and spells are saved. Next time that boss starts, a strip under the window shows up to three damage bars on one scale: Best, Previous kill, and Current, live. Previous is left out when it is the same kill as Best. The kill prints how you did and updates the record if you beat it.
 
 ## Views
 

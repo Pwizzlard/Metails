@@ -198,26 +198,27 @@ slash("reset")
 assert g.resets == 1 and db.windows[1].view == 1
 
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
-assert not any(fr.dmg is not None for fr in list(g.frames.values())), "no race strip without a record"
+assert not any(fr.bars is not None for fr in list(g.frames.values())), "no race strip without a record"
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
-best = db.best["Sam-Beta"].Hogger
-assert best.total == 1500 and best.time == 10 and best.spells.Spell133 == 1200, dict(best)
-g.deaths = 1
-fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
-assert db.best["Sam-Beta"].Hogger.total == 1500, "a kill with a death must not overwrite"
-g.deaths = 0
-fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 0)
-assert db.best["Sam-Beta"].Hogger.date == "2026-10-04"
+e = db.best["Sam-Beta"].Hogger
+assert e.best.total == 1500 and e.best.time == 10 and e.best.spells.Spell133 == 1200 and e.last.total == 1500, dict(e.best)
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
-race = [fr for fr in list(g.frames.values()) if fr.title is not None and fr.dmg is not None][0]
-assert race.title.text == "vs best Hogger: 1.5k in 10s", race.title.text
-assert race.dmg.text.text == "Damage  1.5k of 1.5k" and race.time.text.text == "Time  10s of 10s", (race.dmg.text.text, race.time.text.text)
+race = [fr for fr in list(g.frames.values()) if fr.bars is not None][0]
+assert race.title.text == "Hogger" and race.bars[1].text.text == "Best  1.5k in 10s (150.0/s)" and race.bars[2].text.text == "Current  1.5k in 10s", (race.bars[1].text.text, race.bars[2].text.text)
+assert race.bars[3] is None, "previous is hidden when it is the same kill as best"
 g.incombat = True
 g.tickers[1]()
-assert race.dmg.text.text == "Damage  ~ of 1.5k", race.dmg.text.text
+assert race.bars[2].text.text == "Current  ~ in 10s", race.bars[2].text.text
 g.incombat = False
+g.deaths = 1
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
+assert e.best.date == "2026-10-04" and e.last.total == 1500, "a kill with a death updates previous but not best"
+g.deaths = 0
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 0)
+fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
+g.tickers[1]()
+assert race.bars[2].text.text.startswith("Current"), race.bars[2].text.text
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
 slash("bests")
 slash("forget Hogger")
 assert db.best["Sam-Beta"].Hogger is None
-print("ok")
