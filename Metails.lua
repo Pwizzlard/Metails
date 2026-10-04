@@ -261,6 +261,10 @@ local function snapshotAll(force)
   local now = GetTime()
   if not force and now - lastSnap < 0.25 then return end
   lastSnap = now
+  if UnitAffectingCombat("player") then
+    local me = windows[1] and windows[1].snap and windows[1].snap.total
+    if me ~= nil and secret(me) then captured = me end
+  end
   for _, f in ipairs(windows) do if f:IsShown() then snapshot(f); refresh(f) end end
   if updateRace then updateRace() end
 end
@@ -671,7 +675,7 @@ function CMD.forget(a)
   if bests()[a] then bests()[a] = nil; print("Metails!: forgot " .. a) else print("Metails!: no record for '" .. a .. "'") end
 end
 
-local events, diagArmed, refused = 0, false, {}
+local events, diagArmed, refused, captured = 0, false, {}, nil
 local function probe(where)
   local s = session(views()[1], MODES[1].type)
   local me
@@ -698,6 +702,7 @@ end
 function CMD.diag()
   print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
   print("Metails!: events the client refused: " .. (#refused > 0 and table.concat(refused, ", ") or "none"))
+  print("Metails!: a total captured mid-fight is now " .. (captured == nil and "not captured yet" or secret(captured) and "still locked" or ("readable = " .. fmt(captured))))
   local r = windows[1].rows[1]
   local tex = r and r:IsShown() and r:GetStatusBarTexture()
   local w = tex and tex:GetWidth()
