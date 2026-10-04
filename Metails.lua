@@ -90,8 +90,8 @@ local function units(sp, out)
   if not plain(d) then return end
   if d.unitName ~= nil then d = { d } end
   for _, u in ipairs(d) do
-    if plain(u) and u.unitName ~= nil and u.amount ~= nil and (secret(u.amount) or (plain(u.unitName) and u.unitName ~= "" and u.amount > 0)) then
-      out[#out + 1] = { name = u.unitName, amount = u.amount }
+    if plain(u) and u.unitName ~= nil and u.amount ~= nil and (secret(u.amount) or u.amount > 0) and (secret(u.unitName) or u.unitName ~= "") then
+      out[#out + 1] = { name = u.unitName, amount = u.amount, pet = plain(u.isPet) and u.isPet }
     end
   end
 end
@@ -123,7 +123,7 @@ local function snapshot(f)
   for _, src in ipairs(s.combatSources) do
     if plain(src) and plain(src.isLocalPlayer) and src.isLocalPlayer then me = src break end
   end
-  local snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {}, time = plain(s.durationSeconds) and s.durationSeconds or 0 }
+  local snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {}, time = s.durationSeconds }
   if me then
     if me.totalAmount ~= nil then snap.total = me.totalAmount end
     if me.amountPerSecond ~= nil then snap.rate = me.amountPerSecond end
@@ -138,7 +138,8 @@ local function snapshot(f)
           local name = secret(sp.spellID) and C_Spell.GetSpellName(sp.spellID) or spellName(sp.spellID)
           if plain(name) and plain(sp.creatureName) and sp.creatureName ~= "" then name = name .. " (" .. sp.creatureName .. ")" end
           local row = { name = name, icon = secret(sp.spellID) and C_Spell.GetSpellTexture(sp.spellID) or icon(sp.spellID), amount = amt, rate = sp.amountPerSecond,
-                        overkill = plain(sp.overkillAmount) and sp.overkillAmount > 0 and sp.overkillAmount or nil, units = {} }
+                        overkill = plain(sp.overkillAmount) and sp.overkillAmount > 0 and sp.overkillAmount or nil, units = {},
+                        avoidable = plain(sp.isAvoidable) and sp.isAvoidable or nil, deadly = plain(sp.isDeadly) and sp.isDeadly or nil }
           if secret(amt) then snap.locked = true end
           units(sp, row.units)
           if m.by and not secret(amt) then
@@ -214,7 +215,10 @@ end
 local HOW = { { "Left-click", "next view" }, { "Shift-click", "previous view" }, { "Right-click", "menu" }, { "Mouse wheel", "fight" }, { "Drag", "move" }, { "/metails help", "commands" } }
 
 local function windowTip(f)
-  showTip(f, f, "Metails!", function(line) for _, h in ipairs(HOW) do line(h[1], h[2]) end end)
+  showTip(f, f, "Metails!", function(line)
+    if f.snap and f.snap.time ~= nil then line("Fight length (s)", abbrev(f.snap.time)) end
+    for _, h in ipairs(HOW) do line(h[1], h[2]) end
+  end)
 end
 
 local function rowTip(r)
@@ -223,6 +227,8 @@ local function rowTip(r)
   if m.log and plain(s.pct) then line("Health after", ("%.0f%%"):format(s.pct)) end
   if s.rate ~= nil then line("Per second", abbrev(s.rate, true)) end
   if s.overkill then line("Overkill", abbrev(s.overkill)) end
+  if s.avoidable then line("Avoidable", "yes") end
+  if s.deadly then line("Killing blow", "yes") end
   if s.units and #s.units > 0 then
     local unlocked = plain(s.amount)
     for _, u in ipairs(s.units) do unlocked = unlocked and plain(u.amount) end

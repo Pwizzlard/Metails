@@ -150,7 +150,7 @@ assert tip.title.text == "Spell?" and tip.lines[1].left.text == "Per second" and
 assert tip.lines[2].left.text == "Targets" and tip.lines[3].left.text == "Hogger" and tip.lines[3].right.text == "1.0k", (tip.lines[3].left.text, tip.lines[3].right.text)
 rows[1].scripts.OnLeave(rows[1])
 win.scripts.OnEnter(win)
-assert tip.title.text == "Metails!" and tip.lines[1].left.text == "Left-click" and tip.lines[6].left.text == "/metails help", tip.lines[1].left.text
+assert tip.title.text == "Metails!" and tip.lines[1].left.text == "Fight length (s)" and tip.lines[1].right.text == "10" and tip.lines[2].left.text == "Left-click" and tip.lines[7].left.text == "/metails help", tip.lines[1].left.text
 win.scripts.OnLeave(win)
 n_chat = len(g.chat)
 slash("report party")
