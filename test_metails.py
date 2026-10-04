@@ -2,23 +2,40 @@ import lupa, pathlib
 
 L = lupa.LuaRuntime()
 L.execute(r"""
-bit = { band = function(a, b) return a & b end }
-COMBATLOG_OBJECT_AFFILIATION_MINE, COMBATLOG_OBJECT_REACTION_HOSTILE = 1, 64
-now, incombat, cleuArgs, chat = 100, true, {}, {}
+now, incombat, chat, resets = 100, false, {}, 0
 GetTime = function() return now end
 UnitAffectingCombat = function() return incombat end
-CombatLogGetCurrentEventInfo = function() return table.unpack(cleuArgs) end
-C_Spell = { GetSpellTexture = function(id) return "tex" .. id end }
+C_Spell = { GetSpellTexture = function(id) return "tex" .. id end, GetSpellName = function(id) return "Spell" .. id end }
 C_Timer = { NewTicker = function() end }
-UnitGUID = function() return "Player-1" end
 UnitClass = function() return "Mage", "MAGE" end
 RAID_CLASS_COLORS = { MAGE = { r = 0, g = 0, b = 1 } }
 GameTooltip_Hide = function() end
-UnitHealth, UnitHealthMax, UnitIsFeignDeath = function() return 250 end, function() return 1000 end, function() return false end
 IsShiftKeyDown, IsInRaid, IsInGroup = function() return false end, function() return false end, function() return true end
 SendChatMessage = function(msg, chan, _, target) chat[#chat + 1] = { msg, chan, target } end
 wipe = function(t) for k in pairs(t) do t[k] = nil end end
+issecretvalue = function() return false end
 SlashCmdList = {}
+Enum = { DamageMeterType = { Dps = 0, DamageDone = 1, DamageTaken = 2, AvoidableDamageTaken = 3, Hps = 4, HealingDone = 5, Absorbs = 6, Interrupts = 7, Dispels = 8, Deaths = 9 },
+         DamageMeterSessionType = { Current = 0, Overall = 1, Expired = 2 } }
+local me = { name = "Sam", sourceGUID = "Player-1", isLocalPlayer = true, totalAmount = 1500, amountPerSecond = 150, deathRecapID = 7 }
+local bob = { name = "Bob", sourceGUID = "Player-2", isLocalPlayer = false, totalAmount = 3000, amountPerSecond = 300 }
+lastQuery = {}
+C_DamageMeter = {
+  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; return { combatSources = { bob, me }, durationSeconds = 10 } end,
+  GetCombatSessionFromID = function(id, mt) lastQuery = { id = id, mt = mt }; return { combatSources = { me }, durationSeconds = 5 } end,
+  GetCombatSessionSourceFromType = function(st, mt, guid) return { combatSpells = {
+    { spellID = 133, totalAmount = 1200, amountPerSecond = 120, overkillAmount = 50, combatSpellDetails = { { unitName = "Hogger", amount = 1000 }, { unitName = "Boar", amount = 200 } } },
+    { spellID = 1, totalAmount = 300, amountPerSecond = 30, creatureName = "Kitty", combatSpellDetails = { unitName = "Hogger", amount = 300 } },
+    { spellID = 2, totalAmount = 0 } } } end,
+  GetCombatSessionSourceFromID = function(id, mt, guid) return { combatSpells = { { spellID = 133, totalAmount = 10, amountPerSecond = 2 } } } end,
+  GetAvailableCombatSessions = function() return { { sessionID = 11, name = "Hogger" }, { sessionID = 12, name = "" } } end,
+  ResetAllCombatSessions = function() resets = resets + 1 end,
+}
+C_DeathRecap = {
+  GetRecapEvents = function(id) return { { event = "SPELL_DAMAGE", spellId = 10, spellName = "Bite", amount = 500, currentHP = 250, timestamp = 141, overkill = 10 },
+                                         { event = "SPELL_HEAL", spellName = "Bandage", amount = 100, currentHP = 750, timestamp = 140 } } end,
+  GetRecapMaxHealth = function(id) return 1000 end,
+}
 local function stub()
   local s = { scripts = {} }
   return setmetatable(s, { __index = function(t, k)
@@ -32,6 +49,7 @@ local function stub()
     if k == "GetEffectiveScale" then return function() return 1 end end
     if k == "GetWidth" then return function() return 140 end end
     if k == "SetText" then return function(self, v) self.text = v end end
+    if k == "SetPoint" then return function(self, ...) self.point = { ... } end end
     if k == "CreateFontString" or k == "CreateTexture" then return function() return stub() end end
     return function() end
   end })
@@ -43,7 +61,7 @@ frames = {}
 CreateFrame = function(kind, name) local f = stub(); frames[#frames + 1] = f; return f end
 function windowsOf() local out = {} for _, f in ipairs(frames) do if f.scripts.OnMouseWheel then out[#out + 1] = f end end return out end
 function rowsOf(w) local out = {} for _, f in ipairs(frames) do if rawget(f, "win") == w then out[#out + 1] = f end end return out end
-MetailsDB = { mode = 3, view = 1, scale = 1, pos = { "CENTER", "CENTER", 0, 0 } }
+MetailsDB = { segments = {}, overall = { time = 0 }, windows = { { mode = 1, view = 1, scale = 1, pos = { "CENTER", "CENTER", 0, 0 } } } }
 """)
 L.execute(pathlib.Path(__file__).with_name("Metails.lua").read_text(encoding="utf-8"))
 g = L.globals()
@@ -51,105 +69,59 @@ ev = g.frames[len(g.frames)]
 fire = ev.scripts.OnEvent
 fire(ev, "PLAYER_LOGIN")
 db = g.MetailsDB
-assert db.mode is None and db.windows[1].mode == 3, "old settings migrate into windows[1]"
+assert db.segments is None and db.overall is None, "old combat-log data is dropped"
 win = g.windowsOf()[1]
 click = win.scripts.OnMouseUp
 slash = g.SlashCmdList.METAILS
-
-ME = ("Player-1", "Sam", 0x511)
-PET = ("Pet-7", "Kitty", 0x1111)
-MOB = ("Creature-9", "Hogger", 0x10a48)
-NONE = ("", "", 0)
-
-def cleu(sub, src, dst, *rest):
-    g.cleuArgs = L.table(0, sub, False, src[0], src[1], src[2], 0, dst[0], dst[1], dst[2], 0, *rest)
-    fire(ev, "COMBAT_LOG_EVENT_UNFILTERED")
+rows = g.rowsOf(win)
 
 def mode(n):
     db.windows[1].mode = n - 1
     click(win, "LeftButton")
     assert db.windows[1].mode == n
 
-cleu("SPELL_DAMAGE", ME, MOB, 133, "Fireball", 4, 1000, 50, 4, 0, 0, 200, True)
-cleu("SPELL_MISSED", ME, MOB, 133, "Fireball", 4, "ABSORB", False, 300)
-cleu("SPELL_MISSED", ME, MOB, 133, "Fireball", 4, "DODGE", False, 0)
-cleu("SWING_DAMAGE", PET, MOB, 50, 0, 1, 0, 0, 0, False)
-cleu("SPELL_PERIODIC_DAMAGE", MOB, ME, 10, "Bite", 1, 80, 0, 1, 0, 0, 20, False)
-cleu("SWING_MISSED", MOB, ME, "PARRY", False, 0)
-cleu("SPELL_HEAL", ME, ME, 1, "Bandage", 2, 500, 150, 0, False)
-cleu("SPELL_ABSORBED", MOB, ME, 10, "Bite", 1, "Player-1", "Sam", 0x511, 0, 17, "Ice Barrier", 16, 120)
-cleu("SPELL_ENERGIZE", ME, ME, 12051, "Evocation", 64, 300, 0, 0)
-cleu("SPELL_INTERRUPT", ME, MOB, 2139, "Counterspell", 64, 5, "Frostbolt", 16)
-cleu("SPELL_DISPEL", ME, ME, 475, "Remove Curse", 64, 6, "Curse", 32, "DEBUFF")
-cleu("SPELL_CAST_SUCCESS", ME, MOB, 133, "Fireball", 4)
-cleu("SPELL_CAST_SUCCESS", PET, MOB, 1, "Claw", 1)
-cleu("PARTY_KILL", ME, MOB)
+assert win.title.text == "Damage Done - Current" and win.rate.text == "1.5k (150/s)", (win.title.text, win.rate.text)
+assert rows[1].left.text == "Spell133" and rows[1].right.text == "1.2k (120, 80.0%)", (rows[1].left.text, rows[1].right.text)
+assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30, 20.0%)", rows[2].right.text
+assert g.lastQuery.mt == 1, "Damage Done uses the DamageDone meter type"
+assert rows[1].data.overkill == 50 and len(rows[1].data.units) == 2
 
-seg = db.segments[1]
-fb = seg.damage.spells["Fireball"]
-assert seg.damage.total == 1000 + 200 + 300 + 50, seg.damage.total
-assert fb.hits == 2 and fb.crits == 1 and fb.miss.DODGE == 1 and fb.overkill == 50 and fb.min == 300 and fb.max == 1200, dict(fb)
-assert fb.targets.Hogger == 1500 and fb.critAmt == 1200
-assert seg.damage.spells["Melee (Kitty)"].amount == 50
-assert seg.taken.total == 80 and seg.taken.spells["Bite (Hogger)"] and seg.taken.spells["Melee (Hogger)"].miss.PARRY == 1
-assert seg.takenby.spells.Hogger.amount == 80
-assert seg.healing.total == 350 and seg.overheal.total == 150 and seg.healing.spells.Bandage.targets.Sam == 350
-assert seg.healtaken.spells["Bandage (Sam)"].amount == 350
-assert seg.absorbed.spells["Ice Barrier"].amount == 120
-assert seg.resources.spells.Evocation.amount == 300
-assert seg.interrupts.total == 1 and seg.dispels.total == 1 and seg.kills.spells.Hogger.hits == 1
-assert seg.casts.total == 1, "pet casts must not count"
-assert seg.name == "Hogger"
-assert db.overall.damage.total == seg.damage.total
+mode(3)
+assert win.title.text == "Damage Taken by Source - Current", win.title.text
+assert rows[1].left.text == "Hogger" and rows[1].right.text == "1.3k (86.7%)", (rows[1].left.text, rows[1].right.text)
+assert rows[2].left.text == "Boar" and rows[2].right.text == "200 (13.3%)", rows[2].right.text
+assert g.lastQuery.mt == 2
 
-fire(ev, "PLAYER_REGEN_ENABLED")
-g.now = 130
-cleu("SPELL_DAMAGE", ME, MOB, 133, "Fireball", 4, 10, 0, 4, 0, 0, 0, False)
-assert len(db.segments) == 2 and db.segments[1].damage.total == 10
-assert db.overall.damage.total == 1560
+mode(9)
+assert win.title.text == "Deaths - Current" and win.rate.text == "1.5k", win.rate.text
+assert rows[1].left.text == "-1.0s +Bandage" and rows[1].right.text == "100 (75.0%)", (rows[1].left.text, rows[1].right.text)
+assert rows[2].left.text == "0.0s Bite" and rows[2].right.text == "500 (25.0%)" and rows[2].data.overkill == 10, rows[2].right.text
 
-seg2 = db.segments[1]
-cleu("SPELL_AURA_APPLIED", MOB, ME, 1459, "Arcane Intellect", 64, "BUFF")
-cleu("SPELL_AURA_APPLIED", ME, MOB, 122, "Frost Nova", 16, "DEBUFF")
-g.now = 140
-cleu("SPELL_AURA_REMOVED", MOB, ME, 1459, "Arcane Intellect", 64, "BUFF")
-cleu("UNIT_DIED", NONE, MOB)
-assert seg2.buffs.spells["Arcane Intellect"].amount == 10 and db.overall.buffs.total == 10
-assert seg2.debuffs.spells["Frost Nova"].amount == 10, dict(seg2.debuffs.spells["Frost Nova"])
-cleu("SPELL_AURA_BROKEN_SPELL", ME, MOB, 118, "Polymorph", 64, 133, "Fireball", 4, "DEBUFF")
-cleu("SPELL_AURA_BROKEN", PET, MOB, 118, "Polymorph", 64, "DEBUFF")
-assert seg2.ccbreaks.total == 2 and seg2.ccbreaks.spells["Polymorph (Fireball)"] and seg2.ccbreaks.spells["Polymorph (Melee)"]
-cleu("SPELL_DAMAGE", MOB, ME, 10, "Bite", 1, 500, 10, 1, 0, 0, 0, False)
-g.now = 141
-cleu("UNIT_DIED", NONE, ME)
-assert len(seg2.deaths) == 1 and len(db.overall.deaths) == 1
-log = seg2.deaths[1].log
-assert len(log) == 1 and log[1].amount == -500 and log[1].hp == 25 and log[1].ok == 10, dict(log[1])
-
-mode(16)
-rows = g.rowsOf(win)
-assert rows[1].right.text == "500 (25.0%)" and rows[1].left.text == "-1.0s Bite (Hogger)", (rows[1].right.text, rows[1].left.text)
-mode(13)
-assert rows[1].right.text == "10s (90.9%)" and win.rate.text == "11s", (rows[1].right.text, win.rate.text)
 mode(1)
-assert win.title.text == "Damage Done - Hogger", win.title.text
 click(win, "RightButton")
-assert db.windows[1].view == 2 and win.title.text == "Damage Done - Overall", win.title.text
-db.windows[1].view = 1
+assert db.windows[1].view == 2 and win.title.text == "Damage Done - Previous" and g.lastQuery.st == 2, win.title.text
+click(win, "RightButton")
+assert win.title.text == "Damage Done - Overall" and g.lastQuery.st == 1
+click(win, "RightButton")
+assert win.title.text == "Damage Done - Fight 12" and g.lastQuery.id == 12, win.title.text
+assert rows[1].right.text == "10 (2, 0.7%)" and win.rate.text == "1.5k (150/s)", rows[1].right.text
+click(win, "RightButton")
+assert win.title.text == "Damage Done - Hogger" and g.lastQuery.id == 11
+click(win, "RightButton")
+assert db.windows[1].view == 1
 
 slash("report party 3")
 chat = list(g.chat.values())
-assert len(chat) == 2 and chat[0][2] == "PARTY" and chat[0][1].startswith("Metails! Damage Done - Hogger: 10"), (chat[0][1], chat[0][2])
-assert chat[1][1] == "1. Fireball  10 (1, 100.0%)", chat[1][1]
-slash("report Bob")
+assert len(chat) == 3 and chat[0][2] == "PARTY" and chat[0][1] == "Metails! Damage Done - Current: 1.5k (150/s)", chat[0][1]
+assert chat[1][1] == "1. Spell133  1.2k (120, 80.0%)", chat[1][1]
+slash("report say")
+assert list(g.chat.values())[-1][2] == "SAY" and " | 1. Spell133" in list(g.chat.values())[-1][1]
+slash("report Bob 1")
 assert list(g.chat.values())[-1][2] == "WHISPER" and list(g.chat.values())[-1][3] == "Bob"
 
-slash("pets group")
-cleu("SWING_DAMAGE", PET, MOB, 7, 0, 1, 0, 0, 0, False)
-assert seg2.damage.spells.Kitty.amount == 7
-slash("pets off")
-cleu("SWING_DAMAGE", PET, MOB, 7, 0, 1, 0, 0, 0, False)
-assert seg2.damage.total == 17, seg2.damage.total
+g.now = 101
+fire(ev, "DAMAGE_METER_COMBAT_SESSION_UPDATED")
+assert win.title.text == "Damage Done - Current"
 
 slash("new")
 assert len(db.windows) == 2 and len(g.windowsOf()) == 2
@@ -160,28 +132,18 @@ slash("alpha 0.2")
 assert db.opts.rows == 3 and db.opts.alpha == 0.2
 g.Metails_Toggle()
 assert db.windows[1].hidden is True
+g.Metails_Toggle()
+assert db.windows[1].hidden is False
+
 mm = [fr for fr in list(g.frames.values()) if "OnDragStart" in dict(fr.scripts) and "OnMouseWheel" not in dict(fr.scripts)][0]
-assert db.opts.minimap == 220
+assert db.opts.minimap == 220 and abs((mm.point[4] ** 2 + mm.point[5] ** 2) ** 0.5 - 80) < 1e-6, "button sits 10px outside the minimap ring"
 mm.scripts.OnDragStart(mm)
 mm.scripts.OnUpdate(mm)
 mm.scripts.OnDragStop(mm)
 assert abs(db.opts.minimap - 90) < 1e-6 and mm.scripts.OnUpdate is None, db.opts.minimap
 slash("minimap")
 assert db.opts.minimapHidden is True
-g.Metails_Toggle()
-assert db.windows[1].hidden is False
 
-fire(ev, "PLAYER_REGEN_ENABLED")
-fire(ev, "ENCOUNTER_START", 7, "Edwin VanCleef", 1, 5)
-cleu("SPELL_DAMAGE", ME, MOB, 133, "Fireball", 4, 10, 0, 4, 0, 0, 0, False)
-fire(ev, "ENCOUNTER_END", 7, "Edwin VanCleef", 1, 5, 0)
-assert db.segments[1].name == "Edwin VanCleef (wipe)" and db.segments[1].boss is True
-
-fire(ev, "PLAYER_REGEN_ENABLED")
-cleu("SPELL_AURA_APPLIED", MOB, ME, 1459, "Arcane Intellect", 64, "BUFF")
-g.now = 150
-cleu("SPELL_AURA_REMOVED", MOB, ME, 1459, "Arcane Intellect", 64, "BUFF")
-assert db.overall.buffs.total == 19, db.overall.buffs.total
 slash("reset")
-assert len(db.segments) == 0 and db.overall.time == 0
+assert g.resets == 1 and db.windows[1].view == 1
 print("ok")

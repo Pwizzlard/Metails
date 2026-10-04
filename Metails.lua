@@ -1,30 +1,25 @@
-local band, min, max = bit.band, math.min, math.max
+local min, max = math.min, math.max
 local atan2 = math.atan2 or math.atan
-local MINE, HOSTILE = COMBATLOG_OBJECT_AFFILIATION_MINE, COMBATLOG_OBJECT_REACTION_HOSTILE
-local MODES = {
-  { key = "damage",     label = "Damage Done",            rate = true },
-  { key = "taken",      label = "Damage Taken",           rate = true },
-  { key = "takenby",    label = "Damage Taken by Source", rate = true },
-  { key = "healing",    label = "Healing Done",           rate = true },
-  { key = "healtaken",  label = "Healing Taken",          rate = true },
-  { key = "overheal",   label = "Overhealing" },
-  { key = "absorbed",   label = "Damage Prevented" },
-  { key = "resources",  label = "Resources Gained",       rate = true },
-  { key = "interrupts", label = "Interrupts",             count = true },
-  { key = "dispels",    label = "Dispels",                count = true },
-  { key = "casts",      label = "Casts",                  count = true },
-  { key = "kills",      label = "Killing Blows",          count = true },
-  { key = "buffs",      label = "Buff Uptime",            secs = true },
-  { key = "debuffs",    label = "Debuff Uptime",          secs = true },
-  { key = "ccbreaks",   label = "CC Breaks",              count = true },
-  { key = "deaths",     label = "Deaths",                 log = true },
-}
-local MAXSEGS, RING, WIDTH, ROWH = 12, 12, 230, 17
+local secret = issecretvalue or function() return false end
+local function plain(v) return v ~= nil and not secret(v) end
+local DMT, DMS = Enum and Enum.DamageMeterType, Enum and Enum.DamageMeterSessionType
+local MODES = {}
+local function mode(label, t, kind) if t ~= nil then MODES[#MODES + 1] = { label = label, type = t, rate = kind == "rate", by = kind == "by", log = kind == "log" } end end
+if DMT then
+  mode("Damage Done", DMT.DamageDone or DMT.Dps, "rate")
+  mode("Damage Taken", DMT.DamageTaken, "rate")
+  mode("Damage Taken by Source", DMT.DamageTaken, "by")
+  mode("Avoidable Damage Taken", DMT.AvoidableDamageTaken)
+  mode("Healing Done", DMT.HealingDone or DMT.Hps, "rate")
+  mode("Absorbs", DMT.Absorbs)
+  mode("Interrupts", DMT.Interrupts)
+  mode("Dispels", DMT.Dispels)
+  mode("Deaths", DMT.Deaths, "log")
+end
+local WIDTH, ROWH = 230, 17
 local TEXTURES = { smooth = "Interface\\TargetingFrame\\UI-StatusBar", flat = "Interface\\Buttons\\WHITE8x8", raid = "Interface\\RaidFrame\\Raid-Bar-Hp-Fill" }
 local CHANNELS = { say = "SAY", yell = "YELL", party = "PARTY", raid = "RAID", guild = "GUILD", officer = "OFFICER", instance = "INSTANCE_CHAT" }
-local db, cur, playerGUID, windows = nil, nil, nil, {}
-local list, ring, ringN = {}, {}, 0
-local active, onTarget = { buffs = {}, debuffs = {} }, {}
+local db, windows, history, lastSnap = nil, {}, {}, 0
 
 local function fmt(n)
   if n >= 1e6 then return ("%.2fM"):format(n / 1e6) end
@@ -32,316 +27,174 @@ local function fmt(n)
   return ("%.0f"):format(n)
 end
 
+local function spellName(id)
+  local n = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)
+  return n or (GetSpellInfo and GetSpellInfo(id)) or ("Spell " .. id)
+end
+
 local function icon(id)
-  return id and C_Spell.GetSpellTexture(id) or (id and 134400 or 132349)
+  return id and id > 0 and C_Spell.GetSpellTexture(id) or 132349
 end
 
-local function add(seg, mode, key, tex, amount, crit, target, overkill)
-  local m = seg[mode] or { total = 0, spells = {} }
-  seg[mode] = m
-  m.total = m.total + amount
-  local s = m.spells[key] or { name = key, icon = tex, amount = 0, hits = 0, crits = 0, max = 0 }
-  m.spells[key] = s
-  s.amount, s.hits = s.amount + amount, s.hits + 1
-  if crit then s.crits, s.critAmt = s.crits + 1, (s.critAmt or 0) + amount end
-  if amount > s.max then s.max = amount end
-  if amount > 0 and amount < (s.min or amount + 1) then s.min = amount end
-  if overkill and overkill > 0 then s.overkill = (s.overkill or 0) + overkill end
-  if target then
-    local t = s.targets or {}
-    s.targets = t
-    -- ponytail: 40 targets per spell; Overall would otherwise collect every mob name ever hit
-    if t[target] or (s.ntargets or 0) < 40 then
-      if not t[target] then s.ntargets = (s.ntargets or 0) + 1 end
-      t[target] = (t[target] or 0) + amount
-    end
-  end
-  return s
+local function views()
+  local v = { { label = "Current", type = DMS.Current } }
+  if DMS.Expired then v[#v + 1] = { label = "Previous", type = DMS.Expired } end
+  v[#v + 1] = { label = "Overall", type = DMS.Overall }
+  for i = #history, 1, -1 do v[#v + 1] = history[i] end
+  return v
 end
 
-local function addMiss(seg, mode, key, tex, kind)
-  local s = add(seg, mode, key, tex, 0)
-  s.hits = s.hits - 1
-  s.miss = s.miss or {}
-  s.miss[kind] = (s.miss[kind] or 0) + 1
-end
-
-local function both(fn, ...)
-  fn(cur, ...)
-  fn(db.overall, ...)
-end
-
-local function bump(seg, mode, key, dt)
-  local s = seg and seg[mode] and seg[mode].spells[key]
-  if s then s.amount, seg[mode].total = s.amount + dt, seg[mode].total + dt end
-end
-
-local function flushUptime(now)
-  for mode, set in pairs(active) do
-    for key, b in pairs(set) do
-      bump(cur, mode, key, now - b.t); bump(db.overall, mode, key, now - b.t)
-      b.t = now
-    end
+local function refreshHistory()
+  wipe(history)
+  local ok, list = pcall(C_DamageMeter.GetAvailableCombatSessions)
+  if not ok or not plain(list) then return end
+  for _, s in ipairs(list) do
+    if plain(s) and plain(s.sessionID) then history[#history + 1] = { id = s.sessionID, label = plain(s.name) and s.name ~= "" and s.name or ("Fight " .. s.sessionID) } end
   end
 end
 
-local function touch()
-  local now = GetTime()
-  if not cur or (now - cur.last > 10 and not UnitAffectingCombat("player")) then
-    cur = { time = 0, last = now }
-    table.insert(db.segments, 1, cur)
-    db.segments[MAXSEGS + 1] = nil
-    wipe(active.debuffs); wipe(onTarget)
-    for name, b in pairs(active.buffs) do b.t = now; add(cur, "buffs", name, b.icon, 0) end
-  end
-  local dt = now - cur.last
-  if not UnitAffectingCombat("player") then dt = min(dt, 2) end
-  cur.time, db.overall.time, cur.last = cur.time + dt, db.overall.time + dt, now
+local function session(v, t)
+  local ok, s = pcall(v.id and C_DamageMeter.GetCombatSessionFromID or C_DamageMeter.GetCombatSessionFromType, v.id or v.type, t)
+  return ok and plain(s) and s or nil
 end
 
-local function record(mode, key, tex, amount, crit, target, overkill)
-  touch()
-  both(add, mode, key, tex, amount, crit, target, overkill)
+local function spells(v, t, me)
+  local ok, s = pcall(v.id and C_DamageMeter.GetCombatSessionSourceFromID or C_DamageMeter.GetCombatSessionSourceFromType, v.id or v.type, t, me.sourceGUID, me.sourceCreatureID)
+  return ok and plain(s) and plain(s.combatSpells) and s.combatSpells or nil
 end
 
-local function miss(mode, key, tex, kind)
-  touch()
-  both(addMiss, mode, key, tex, kind)
-end
-
-local function auraOn(mode, key, tex)
-  local b = active[mode][key]
-  if b then b.n = b.n + 1 return end
-  active[mode][key] = { t = GetTime(), icon = tex, n = 1 }
-  if cur then add(cur, mode, key, tex, 0) end
-  add(db.overall, mode, key, tex, 0)
-end
-
-local function auraOff(mode, key)
-  local b = active[mode][key]
-  if not b then return end
-  b.n = b.n - 1
-  if b.n > 0 then return end
-  flushUptime(GetTime())
-  active[mode][key] = nil
-end
-
-local function targetDied(guid)
-  for name, n in pairs(onTarget[guid] or {}) do
-    for _ = 1, n do auraOff("debuffs", name) end
-  end
-  onTarget[guid] = nil
-end
-
-local function logHit(name, tex, amount, overkill)
-  ringN = ringN % RING + 1
-  local e = ring[ringN] or {}
-  ring[ringN] = e
-  e.t, e.name, e.icon, e.amount, e.ok = GetTime(), name, tex, amount, overkill
-  e.hp = UnitHealth("player") / max(1, UnitHealthMax("player")) * 100
-end
-
-local function addDeath(seg, death)
-  seg.deaths = seg.deaths or {}
-  table.insert(seg.deaths, death)
-  if #seg.deaths > 5 then table.remove(seg.deaths, 1) end
-end
-
-local function died()
-  if UnitIsFeignDeath("player") then return end
-  touch()
-  local now, log = GetTime(), {}
-  for i = 1, RING do
-    local e = ring[(ringN + i - 1) % RING + 1]
-    if e and now - e.t < 30 then log[#log + 1] = e end
-  end
-  wipe(ring)
-  both(addDeath, { t = now, log = log })
-end
-
-local function cleu(_, ev, _, srcGUID, srcName, srcFlags, _, dstGUID, dstName, dstFlags, _, ...)
-  local mine, toMe = band(srcFlags or 0, MINE) > 0, dstGUID == playerGUID
-  local pet = mine and srcGUID ~= playerGUID
-  if pet and db.opts.pets == "off" then mine = false end
-  if not mine and not toMe and ev ~= "SPELL_ABSORBED" and ev ~= "UNIT_DIED" then return end
-  local o, spellId, spellName = 4, ...
-  if ev:sub(1, 5) == "SWING" then o, spellId, spellName = 1, nil, "Melee"
-  elseif ev:sub(1, 13) == "ENVIRONMENTAL" then o, spellId, spellName = 2, nil, (...) end
-  spellName = spellName or "Unknown"
-  local suffix = ev:match("_([A-Z]+)$")
-  if suffix == "SHIELD" or suffix == "SPLIT" then suffix = "DAMAGE" end
-  local tex = icon(spellId)
-  local key = spellName
-  if pet then key = db.opts.pets == "group" and (srcName or "Pet") or spellName .. " (" .. (srcName or "Pet") .. ")" end
-  local from = spellName .. " (" .. (srcName or "?") .. ")"
-  if suffix == "DAMAGE" then
-    local amt, overkill, _, _, _, absorbed, crit = select(o, ...)
-    amt, absorbed = amt or 0, absorbed or 0
-    if mine then
-      record("damage", key, tex, amt + absorbed, crit, dstName, overkill)
-      if cur and not cur.name and band(dstFlags or 0, HOSTILE) > 0 then cur.name = dstName end
-    end
-    if toMe then
-      record("taken", from, tex, amt, crit)
-      record("takenby", srcName or "?", tex, amt, crit)
-      logHit(from, tex, -amt, overkill)
-    end
-  elseif suffix == "MISSED" then
-    local kind, _, missed = select(o, ...)
-    if mine and kind == "ABSORB" then record("damage", key, tex, missed or 0, nil, dstName)
-    elseif mine then miss("damage", key, tex, kind or "MISS") end
-    if toMe then miss("taken", from, tex, kind or "MISS") end
-  elseif suffix == "HEAL" then
-    local amt, over, _, crit = select(o, ...)
-    amt, over = amt or 0, over or 0
-    if mine then
-      record("healing", key, tex, amt - over, crit, dstName)
-      if over > 0 then record("overheal", key, tex, over, crit) end
-    end
-    if toMe and amt > over then record("healtaken", from, tex, amt - over, crit); logHit(from, tex, amt - over) end
-  elseif ev == "SPELL_ABSORBED" then
-    local s = type((...)) == "number" and 4 or 1
-    local _, _, flags, _, absId, absName, _, amt = select(s, ...)
-    if band(flags or 0, MINE) > 0 and (amt or 0) > 0 then record("absorbed", absName or "Absorb", icon(absId), amt) end
-  elseif suffix == "ENERGIZE" then
-    local amt = select(o, ...)
-    if toMe and (amt or 0) > 0 then record("resources", spellName, tex, amt) end
-  elseif suffix == "INTERRUPT" and mine then record("interrupts", key, tex, 1)
-  elseif (suffix == "DISPEL" or suffix == "STOLEN") and mine then record("dispels", key, tex, 1)
-  elseif suffix == "SUCCESS" and srcGUID == playerGUID then record("casts", spellName, tex, 1)
-  elseif ev == "PARTY_KILL" and mine then record("kills", dstName or "?", "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", 1)
-  elseif ev == "SPELL_AURA_APPLIED" then
-    local kind = select(o, ...)
-    if toMe and kind == "BUFF" then auraOn("buffs", spellName, tex)
-    elseif mine and kind == "DEBUFF" and band(dstFlags or 0, HOSTILE) > 0 then
-      auraOn("debuffs", spellName, tex)
-      local t = onTarget[dstGUID] or {}
-      onTarget[dstGUID] = t
-      t[spellName] = (t[spellName] or 0) + 1
-    end
-  elseif ev == "SPELL_AURA_REMOVED" then
-    if toMe then auraOff("buffs", spellName) end
-    local t = mine and onTarget[dstGUID]
-    if t and t[spellName] then
-      t[spellName] = t[spellName] > 1 and t[spellName] - 1 or nil
-      auraOff("debuffs", spellName)
-    end
-  elseif ev == "SPELL_AURA_BROKEN" or ev == "SPELL_AURA_BROKEN_SPELL" then
-    if mine and select(ev == "SPELL_AURA_BROKEN" and o or o + 3, ...) == "DEBUFF" then
-      record("ccbreaks", spellName .. " (" .. (ev == "SPELL_AURA_BROKEN" and "Melee" or (select(o + 1, ...)) or "?") .. ")", tex, 1)
-    end
-  elseif ev == "UNIT_DIED" then
-    if toMe then died() else targetDied(dstGUID) end
+local function units(sp, out)
+  local d = sp.combatSpellDetails
+  if not plain(d) then return end
+  if d.unitName ~= nil then d = { d } end
+  for _, u in ipairs(d) do
+    if plain(u) and plain(u.unitName) and plain(u.amount) then out[#out + 1] = { name = u.unitName, amount = u.amount } end
   end
 end
 
-local function nviews() return #db.segments + 1 end
-
-local function segAt(i)
-  return i == 2 and db.overall or db.segments[i == 1 and 1 or i - 1]
+local function deathRows(recap, rows)
+  local ok, raw = pcall(C_DeathRecap.GetRecapEvents, recap)
+  if not ok or not plain(raw) then return end
+  local ok2, hp = pcall(C_DeathRecap.GetRecapMaxHealth, recap)
+  hp = ok2 and plain(hp) and hp > 0 and hp or 1
+  local t0 = raw[1] and plain(raw[1].timestamp) and raw[1].timestamp
+  for i = #raw, 1, -1 do
+    local e = raw[i]
+    if plain(e) and plain(e.amount) then
+      local heal = e.event == "SPELL_HEAL" or e.event == "SPELL_PERIODIC_HEAL"
+      local name = plain(e.spellName) and e.spellName ~= "" and e.spellName or (e.event == "SWING_DAMAGE" and "Melee" or "Unknown")
+      local dt = t0 and plain(e.timestamp) and (e.timestamp - t0) or 0
+      rows[#rows + 1] = { name = ("%.1fs %s%s"):format(dt, heal and "+" or "", name), icon = icon(plain(e.spellId) and e.spellId or 0),
+                          amount = e.amount, pct = plain(e.currentHP) and e.currentHP / hp * 100 or 0, overkill = plain(e.overkill) and e.overkill }
+    end
+  end
 end
 
-local function segLabel(i)
-  local seg = segAt(i)
-  return i == 2 and "Overall" or seg and seg.name or (i == 1 and "Current" or "Segment")
-end
-
-local function collect(cfg)
-  local mode = MODES[cfg.mode]
-  if cfg.view > nviews() then cfg.view = 1 end
-  local seg = segAt(cfg.view)
-  local m = seg and seg[mode.key]
-  local time = seg and seg.time or 0
-  if time <= 0 then time = 1 end
-  local tot, top = m and m.total or 0, 0
-  wipe(list)
-  if mode.log then
-    local d = seg and seg.deaths and seg.deaths[#seg.deaths]
-    tot = d and #seg.deaths or 0
-    if d then
-      for i = max(1, #d.log - db.opts.rows + 1), #d.log do
-        local e = d.log[i]
-        list[#list + 1] = { name = ("%.1fs %s%s"):format(e.t - d.t, e.amount > 0 and "+" or "", e.name), icon = e.icon, amount = math.abs(e.amount), pct = e.hp, overkill = e.ok }
-        top = max(top, math.abs(e.amount))
+local function snapshot(f)
+  local m, v = MODES[f.cfg.mode], views()[f.cfg.view]
+  if not v then f.cfg.view = 1; v = views()[1] end
+  local s = session(v, m.type)
+  if not s or not plain(s.combatSources) then return end
+  local me
+  for _, src in ipairs(s.combatSources) do
+    if plain(src) and plain(src.isLocalPlayer) and src.isLocalPlayer then me = src break end
+  end
+  local snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {}, time = plain(s.durationSeconds) and s.durationSeconds or 0 }
+  if me then
+    if plain(me.totalAmount) then snap.total = me.totalAmount end
+    if plain(me.amountPerSecond) then snap.rate = me.amountPerSecond end
+    if m.log then
+      if plain(me.deathRecapID) and C_DeathRecap then deathRows(me.deathRecapID, snap.rows) end
+    else
+      local byUnit = {}
+      for _, sp in ipairs(spells(v, m.type, me) or {}) do
+        if plain(sp) and plain(sp.spellID) and plain(sp.totalAmount) and sp.totalAmount > 0 then
+          local name = spellName(sp.spellID)
+          if plain(sp.creatureName) and sp.creatureName ~= "" then name = name .. " (" .. sp.creatureName .. ")" end
+          local row = { name = name, icon = icon(sp.spellID), amount = sp.totalAmount, rate = plain(sp.amountPerSecond) and sp.amountPerSecond or nil,
+                        overkill = plain(sp.overkillAmount) and sp.overkillAmount or nil, units = {} }
+          units(sp, row.units)
+          if m.by then
+            for _, u in ipairs(row.units) do
+              local r = byUnit[u.name] or { name = u.name, icon = 132349, amount = 0, units = {} }
+              byUnit[u.name] = r
+              r.amount = r.amount + u.amount
+              r.units[#r.units + 1] = { name = row.name, amount = u.amount }
+            end
+          else snap.rows[#snap.rows + 1] = row end
+        end
       end
+      for _, r in pairs(byUnit) do snap.rows[#snap.rows + 1] = r end
+      table.sort(snap.rows, function(a, b) return a.amount > b.amount end)
+      if m.by then snap.total = 0; for _, r in ipairs(snap.rows) do snap.total = snap.total + r.amount end end
     end
-  elseif m then
-    for _, s in pairs(m.spells) do list[#list + 1] = s end
-    table.sort(list, function(x, y) return x.amount > y.amount end)
-    top = list[1] and list[1].amount or 0
   end
-  return mode, segLabel(cfg.view), tot, top, time
+  f.snap = snap
 end
 
-local function rowText(mode, s, tot, time)
-  local pct = s.pct or min(100, s.amount / (mode.secs and time or max(tot, 1)) * 100)
-  return (mode.secs and ("%.0fs"):format(s.amount) or fmt(s.amount)) .. " (" .. (mode.rate and (fmt(s.amount / time) .. ", ") or "") .. ("%.1f%%)"):format(pct)
+local function rowText(m, s, tot)
+  local pct = s.pct or s.amount / max(tot, 1) * 100
+  return fmt(s.amount) .. " (" .. (m.rate and s.rate and (fmt(s.rate) .. ", ") or "") .. ("%.1f%%)"):format(pct)
 end
 
-local function headText(mode, tot, time)
-  return mode.secs and ("%.0fs"):format(time) or (fmt(tot) .. (mode.rate and (" (" .. fmt(tot / time) .. "/s)") or ""))
+local function headText(m, snap)
+  return fmt(snap.total) .. (m.rate and (" (" .. fmt(snap.rate) .. "/s)") or "")
 end
 
 local function rowTip(r)
-  local s, mode = r.data, r.mode
+  local s, m = r.data, r.mode
   GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
   GameTooltip:AddLine(s.name)
   local function line(k, v) GameTooltip:AddDoubleLine(k, v, 1, 1, 1, 1, 1, 1) end
-  if mode.log then
-    GameTooltip:AddLine(("%.0f%% health after"):format(s.pct), 1, 1, 1)
-    if (s.overkill or 0) > 0 then line("Overkill", fmt(s.overkill)) end
-  elseif mode.count or mode.secs then line("Count", s.hits)
-  else
-    line("Hits", s.hits)
-    if s.crits > 0 then line("Crits", ("%d (%.0f%%)"):format(s.crits, s.crits / max(s.hits, 1) * 100)) end
-    if s.hits > 0 then line("Average", fmt(s.amount / s.hits)) end
-    if s.crits > 0 and s.hits > s.crits then line("Normal / crit avg", fmt((s.amount - s.critAmt) / (s.hits - s.crits)) .. " / " .. fmt(s.critAmt / s.crits)) end
-    if s.min then line("Min / max", fmt(s.min) .. " / " .. fmt(s.max)) end
-    if mode.rate then line("Per second", fmt(s.amount / r.time)) end
-    if (s.overkill or 0) > 0 then line("Overkill", fmt(s.overkill)) end
-    if s.miss then
-      local parts = {}
-      for kind, n in pairs(s.miss) do parts[#parts + 1] = kind:sub(1, 1) .. kind:sub(2):lower() .. " " .. n end
-      table.sort(parts)
-      line("Avoided", table.concat(parts, ", "))
-    end
-    if s.targets then
-      local ts = {}
-      for name, amt in pairs(s.targets) do ts[#ts + 1] = { name, amt } end
-      table.sort(ts, function(a, b) return a[2] > b[2] end)
-      GameTooltip:AddLine(" ")
-      for i = 1, min(5, #ts) do line(ts[i][1], fmt(ts[i][2]) .. (" (%.0f%%)"):format(ts[i][2] / max(s.amount, 1) * 100)) end
-    end
+  if m.log then GameTooltip:AddLine(("%.0f%% health after"):format(s.pct), 1, 1, 1) end
+  if s.rate then line("Per second", fmt(s.rate)) end
+  if (s.overkill or 0) > 0 then line("Overkill", fmt(s.overkill)) end
+  if s.units and #s.units > 0 then
+    table.sort(s.units, function(a, b) return a.amount > b.amount end)
+    GameTooltip:AddLine(" ")
+    for i = 1, min(5, #s.units) do line(s.units[i].name, fmt(s.units[i].amount) .. (" (%.0f%%)"):format(s.units[i].amount / max(s.amount, 1) * 100)) end
   end
   GameTooltip:Show()
 end
 
 local refresh, applyVisibility
 
+local function snapshotAll(force)
+  local now = GetTime()
+  if not force and now - lastSnap < 0.25 then return end
+  lastSnap = now
+  for _, f in ipairs(windows) do if f:IsShown() then snapshot(f); refresh(f) end end
+end
+
 local function report(f, chan, target, n)
-  local mode, label, tot, _, time = collect(f.cfg)
+  local m, snap = MODES[f.cfg.mode], f.snap
+  if not snap then return end
   chan = chan or (IsInRaid() and "RAID" or IsInGroup() and "PARTY" or "SAY")
-  SendChatMessage(("Metails! %s - %s: %s"):format(mode.label, label, headText(mode, tot, time)), chan, nil, target)
-  for i = 1, min(n or 5, #list) do
-    SendChatMessage(("%d. %s  %s"):format(i, list[i].name, rowText(mode, list[i], tot, time)), chan, nil, target)
-  end
+  local head = ("Metails! %s: %s"):format(snap.label, headText(m, snap))
+  local lines = {}
+  for i = 1, min(n or 5, #snap.rows) do lines[i] = ("%d. %s  %s"):format(i, snap.rows[i].name, rowText(m, snap.rows[i], snap.total)) end
+  if chan == "SAY" or chan == "YELL" then SendChatMessage(head .. " | " .. table.concat(lines, " | "), chan) return end
+  SendChatMessage(head, chan, nil, target)
+  for _, l in ipairs(lines) do SendChatMessage(l, chan, nil, target) end
 end
 
 local function reset()
-  db.segments, db.overall, cur = {}, { time = 0 }, nil
-  for _, f in ipairs(windows) do f.cfg.view = 1; refresh(f) end
+  C_DamageMeter.ResetAllCombatSessions()
+  for _, f in ipairs(windows) do f.cfg.view = 1; f.snap = nil end
+  refreshHistory()
+  snapshotAll(true)
 end
 
 local function openMenu(f)
   MenuUtil.CreateContextMenu(f, function(_, root)
     root:CreateTitle("Metails!")
-    local views = root:CreateButton("View")
-    for i, mode in ipairs(MODES) do
-      views:CreateRadio(mode.label, function() return f.cfg.mode == i end, function() f.cfg.mode = i; refresh(f) end)
+    local vs = root:CreateButton("View")
+    for i, m in ipairs(MODES) do
+      vs:CreateRadio(m.label, function() return f.cfg.mode == i end, function() f.cfg.mode = i; snapshot(f); refresh(f) end)
     end
-    local segs = root:CreateButton("Segment")
-    for i = 1, nviews() do
-      segs:CreateRadio(segLabel(i), function() return f.cfg.view == i end, function() f.cfg.view = i; refresh(f) end)
+    local segs = root:CreateButton("Fight")
+    for i, v in ipairs(views()) do
+      segs:CreateRadio(v.label, function() return f.cfg.view == i end, function() f.cfg.view = i; snapshot(f); refresh(f) end)
     end
     root:CreateButton("Report to chat", function() report(f) end)
     root:CreateCheckbox("Locked", function() return f.cfg.locked end, function() f.cfg.locked = not f.cfg.locked end)
@@ -354,8 +207,8 @@ local function onClick(r, btn)
   if f.dragged then f.dragged = nil return end
   if btn == "LeftButton" then f.cfg.mode = (f.cfg.mode - 1 + (IsShiftKeyDown() and -1 or 1)) % #MODES + 1
   elseif MenuUtil and MenuUtil.CreateContextMenu then openMenu(f) return
-  else f.cfg.view = f.cfg.view % nviews() + 1 end
-  refresh(f)
+  else f.cfg.view = f.cfg.view % #views() + 1 end
+  snapshot(f); refresh(f)
 end
 
 local function styleText(fs)
@@ -391,29 +244,30 @@ end
 
 function refresh(f)
   if not f:IsShown() then return end
-  local mode, label, tot, top, time = collect(f.cfg)
-  f.title:SetText(mode.label .. " - " .. label)
-  f.rate:SetText(headText(mode, tot, time))
-  local n = tot > 0 and min(#list, db.opts.rows) or 0
+  local m, snap = MODES[f.cfg.mode], f.snap
+  if not snap then
+    local v = views()[f.cfg.view] or views()[1]
+    snap = { label = m.label .. " - " .. v.label, total = 0, rate = 0, rows = {} }
+  end
+  f.title:SetText(snap.label)
+  f.rate:SetText(headText(m, snap))
+  local n = min(#snap.rows, db.opts.rows)
+  local top = snap.rows[1] and snap.rows[1].amount or 0
+  for _, r in ipairs(snap.rows) do top = max(top, r.amount) end
   for i = 1, max(n, #f.rows) do
     local r = rowAt(f, i)
     r:SetShown(i <= n)
     if i <= n then
-      local s = list[i]
-      r.data, r.mode, r.time = s, mode, time
+      local s = snap.rows[i]
+      r.data, r.mode = s, m
       r:SetMinMaxValues(0, top)
       r:SetValue(s.amount)
       r.icon:SetTexture(s.icon)
       r.left:SetText(s.name)
-      r.right:SetText(rowText(mode, s, tot, time))
+      r.right:SetText(rowText(m, s, snap.total))
     end
   end
   f:SetHeight(18 + n * ROWH + (n == 0 and 0 or 2))
-end
-
-local function refreshAll()
-  flushUptime(GetTime())
-  for _, f in ipairs(windows) do refresh(f) end
 end
 
 function applyVisibility()
@@ -446,11 +300,11 @@ local function newWindow(cfg)
   f:SetScript("OnDragStart", function(s) if not cfg.locked then s.dragged = true; s:StartMoving() end end)
   f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing(); local p, _, rp, x, y = s:GetPoint(); cfg.pos = { p, rp, x, y } end)
   f:SetScript("OnMouseUp", onClick)
-  f:SetScript("OnMouseWheel", function(s, d) cfg.view = (cfg.view - 1 - d) % nviews() + 1; refresh(s) end)
+  f:SetScript("OnMouseWheel", function(s, d) cfg.view = (cfg.view - 1 - d) % #views() + 1; snapshot(s); refresh(s) end)
   f:SetScript("OnEnter", function(s)
     GameTooltip:SetOwner(s, "ANCHOR_TOP")
     GameTooltip:AddLine("Metails!")
-    GameTooltip:AddLine("Left-click: next view (shift: previous)\nRight-click: menu   Wheel: segment   Drag: move\n/metails help for commands", 1, 1, 1)
+    GameTooltip:AddLine("Left-click: next view (shift: previous)\nRight-click: menu   Wheel: fight   Drag: move\n/metails help for commands", 1, 1, 1)
     GameTooltip:Show()
   end)
   f:SetScript("OnLeave", GameTooltip_Hide)
@@ -485,23 +339,23 @@ function Metails_Toggle()
   for _, f in ipairs(windows) do anyShown = anyShown or not f.cfg.hidden end
   for _, f in ipairs(windows) do f.cfg.hidden = anyShown end
   applyVisibility()
+  snapshotAll(true)
 end
 
 local HELP = [[/metails - show or hide the window
 /metails report [say|party|raid|guild|name] [lines] - post the current view to chat
 /metails new, close - open or close a second window
-/metails reset - clear all data
+/metails reset - clear Blizzard's combat data
 /metails lock - lock or unlock window positions
 /metails scale <n>, rows <n>, alpha <0-1>, fontsize <n> - size, rows, opacity, font
 /metails texture <smooth|flat|raid> - bar texture
 /metails autohide <combat|ooc|off> - hide in combat or out of combat
-/metails pets <rows|group|off> - pet rows alongside yours, one row per pet, or ignored
 /metails minimap - show or hide the minimap button]]
 
 local minimapBtn
 local function minimapPos(b)
-  local a = math.rad(db.opts.minimap)
-  b:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * 80, math.sin(a) * 80)
+  local a, r = math.rad(db.opts.minimap), Minimap:GetWidth() / 2 + 10
+  b:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * r, math.sin(a) * r)
 end
 
 local function buildMinimap()
@@ -510,8 +364,8 @@ local function buildMinimap()
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp"); b:RegisterForDrag("LeftButton")
   local border = b:CreateTexture(nil, "OVERLAY")
   border:SetSize(53, 53); border:SetPoint("TOPLEFT"); border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-  local icon = b:CreateTexture(nil, "BACKGROUND")
-  icon:SetSize(20, 20); icon:SetPoint("CENTER", 0, 1); icon:SetTexture("Interface\\Icons\\Ability_Warrior_Rampage"); icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  local ic = b:CreateTexture(nil, "BACKGROUND")
+  ic:SetSize(20, 20); ic:SetPoint("CENTER", 0, 1); ic:SetTexture("Interface\\Icons\\Ability_Warrior_Rampage"); ic:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
   b:SetScript("OnClick", function(_, btn)
     if btn == "LeftButton" then Metails_Toggle() elseif MenuUtil and MenuUtil.CreateContextMenu then openMenu(windows[1]) end
@@ -542,34 +396,14 @@ local CMD = {}
 CMD[""] = Metails_Toggle
 CMD.reset = reset
 function CMD.minimap() db.opts.minimapHidden = not db.opts.minimapHidden; minimapBtn:SetShown(not db.opts.minimapHidden) end
-
-local function buildOptions()
-  local panel = CreateFrame("Frame")
-  panel.name = "Metails!"
-  local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  title:SetPoint("TOPLEFT", 16, -16); title:SetText("Metails!")
-  local body = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-  body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12); body:SetWidth(580); body:SetJustifyH("LEFT")
-  body:SetText("A personal combat meter. Left-click the window for the next view, right-click for the menu, mouse wheel for fight segments, drag to move.\n\n" .. HELP)
-  local x = 0
-  for _, b in ipairs({ { "Show / hide", Metails_Toggle }, { "New window", CMD.new }, { "Minimap button", CMD.minimap }, { "Reset data", reset } }) do
-    local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    btn:SetSize(130, 24); btn:SetPoint("TOPLEFT", body, "BOTTOMLEFT", x, -16); btn:SetText(b[1]); btn:SetScript("OnClick", b[2])
-    x = x + 136
-  end
-  if Settings and Settings.RegisterCanvasLayoutCategory then
-    Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(panel, panel.name))
-  elseif InterfaceOptions_AddCategory then InterfaceOptions_AddCategory(panel) end
-end
 function CMD.lock() for _, f in ipairs(windows) do f.cfg.locked = not f.cfg.locked end; print("Metails!: " .. (windows[1].cfg.locked and "locked" or "unlocked")) end
 function CMD.scale(a) for _, f in ipairs(windows) do f.cfg.scale = num(tonumber(a), 0.5, 3, 1); f:SetScale(f.cfg.scale) end end
-function CMD.rows(a) db.opts.rows = num(tonumber(a), 1, 40, 10); refreshAll() end
+function CMD.rows(a) db.opts.rows = num(tonumber(a), 1, 40, 10); applyVisibility() end
 function CMD.alpha(a) db.opts.alpha = num(tonumber(a), 0, 1, 0.55); applyOpts() end
 function CMD.fontsize(a) db.opts.fontsize = num(tonumber(a), 6, 20, 10); applyOpts() end
 function CMD.texture(a) if TEXTURES[a] then db.opts.texture = a; applyOpts() else print("Metails!: texture smooth, flat or raid") end end
 function CMD.autohide(a) if a == "combat" or a == "ooc" or a == "off" then db.opts.autohide = a; applyVisibility() else print("Metails!: autohide combat, ooc or off") end end
-function CMD.pets(a) if a == "rows" or a == "group" or a == "off" then db.opts.pets = a else print("Metails!: pets rows, group or off") end end
-function CMD.new() newWindow(defaultWindow(#windows + 1)); db.windows[#windows] = windows[#windows].cfg; refreshAll() end
+function CMD.new() newWindow(defaultWindow(#windows + 1)); db.windows[#windows] = windows[#windows].cfg; snapshotAll(true) end
 function CMD.close()
   if #windows == 1 then return end
   table.remove(windows):Hide()
@@ -583,8 +417,28 @@ function CMD.report(a)
 end
 function CMD.help() print("Metails!\n" .. HELP) end
 
+local function buildOptions()
+  local panel = CreateFrame("Frame")
+  panel.name = "Metails!"
+  local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  title:SetPoint("TOPLEFT", 16, -16); title:SetText("Metails!")
+  local body = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12); body:SetWidth(580); body:SetJustifyH("LEFT")
+  body:SetText("A personal combat meter. Left-click the window for the next view, right-click for the menu, mouse wheel for fights, drag to move.\n\n" .. HELP)
+  local x = 0
+  for _, b in ipairs({ { "Show / hide", Metails_Toggle }, { "New window", CMD.new }, { "Minimap button", CMD.minimap }, { "Reset data", reset } }) do
+    local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    btn:SetSize(130, 24); btn:SetPoint("TOPLEFT", body, "BOTTOMLEFT", x, -16); btn:SetText(b[1]); btn:SetScript("OnClick", b[2])
+    x = x + 136
+  end
+  if Settings and Settings.RegisterCanvasLayoutCategory then
+    Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(panel, panel.name))
+  elseif InterfaceOptions_AddCategory then InterfaceOptions_AddCategory(panel) end
+end
+
 SLASH_METAILS1 = "/metails"
 SlashCmdList.METAILS = function(msg)
+  if not db then print("Metails!: this game client has no damage meter API.") return end
   local cmd, arg = msg:match("^(%S*)%s*(.-)$")
   local fn = CMD[cmd:lower()]
   if fn then fn(arg) else CMD.help() end
@@ -592,24 +446,12 @@ end
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
-ev:SetScript("OnEvent", function(_, e, ...)
-  if e == "COMBAT_LOG_EVENT_UNFILTERED" then cleu(CombatLogGetCurrentEventInfo())
-  elseif e == "PLAYER_REGEN_ENABLED" then
-    if cur then flushUptime(GetTime()); wipe(active.debuffs); wipe(onTarget); cur = nil end
-    applyVisibility()
-  elseif e == "PLAYER_REGEN_DISABLED" then applyVisibility()
-  elseif e == "ENCOUNTER_START" then
-    local _, name = ...
-    cur = nil; touch(); cur.name, cur.boss = name, true
-  elseif e == "ENCOUNTER_END" then
-    local _, name, _, _, success = ...
-    if cur and cur.boss then cur.name = name .. (success == 1 and "" or " (wipe)") end
-  elseif e == "PLAYER_LOGIN" then
+ev:SetScript("OnEvent", function(_, e)
+  if e == "PLAYER_LOGIN" then
+    if not DMT or not C_DamageMeter or #MODES == 0 then print("Metails!: this game client has no damage meter API, nothing to show.") return end
     MetailsDB = MetailsDB or {}
     db = MetailsDB
-    if type(db.segments) ~= "table" or type(db.overall) ~= "table" or type(db.overall.time) ~= "number" then db.segments, db.overall = {}, { time = 0 } end
-    if db.mode then db.windows = { { mode = db.mode, view = db.view, scale = db.scale, pos = db.pos, hidden = db.hidden, locked = db.locked } } end
-    db.mode, db.view, db.scale, db.pos, db.hidden, db.locked = nil
+    db.segments, db.overall, db.mode, db.view, db.scale, db.pos, db.hidden, db.locked = nil
     if type(db.windows) ~= "table" or not db.windows[1] then db.windows = { defaultWindow(1) } end
     for i, w in ipairs(db.windows) do
       w.mode = (type(w.mode) == "number" and MODES[w.mode]) and w.mode or 1
@@ -619,16 +461,21 @@ ev:SetScript("OnEvent", function(_, e, ...)
     end
     local o = type(db.opts) == "table" and db.opts or {}
     db.opts = { rows = num(o.rows, 1, 40, 10), alpha = num(o.alpha, 0, 1, 0.55), fontsize = num(o.fontsize, 6, 20, 10),
-                texture = TEXTURES[o.texture] and o.texture or "smooth", autohide = o.autohide or "off", pets = o.pets or "rows",
+                texture = TEXTURES[o.texture] and o.texture or "smooth", autohide = o.autohide or "off",
                 minimap = num(o.minimap, -360, 360, 220), minimapHidden = o.minimapHidden == true }
-    playerGUID = UnitGUID("player")
-    if AuraUtil and AuraUtil.ForEachAura then
-      AuraUtil.ForEachAura("player", "HELPFUL", nil, function(name, tex) active.buffs[name] = { t = GetTime(), icon = tex, n = 1 } end)
-    end
     for _, w in ipairs(db.windows) do newWindow(w) end
     buildMinimap(); buildOptions()
+    refreshHistory()
     applyVisibility()
-    C_Timer.NewTicker(0.5, refreshAll)
-    for _, name in ipairs({ "COMBAT_LOG_EVENT_UNFILTERED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "ENCOUNTER_START", "ENCOUNTER_END" }) do ev:RegisterEvent(name) end
-  end
+    snapshotAll(true)
+    C_Timer.NewTicker(1, function() if not UnitAffectingCombat("player") then snapshotAll(true) end end)
+    for _, name in ipairs({ "DAMAGE_METER_COMBAT_SESSION_UPDATED", "DAMAGE_METER_CURRENT_SESSION_UPDATED", "DAMAGE_METER_RESET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do
+      pcall(ev.RegisterEvent, ev, name)
+    end
+  elseif e == "DAMAGE_METER_RESET" then
+    for _, f in ipairs(windows) do f.snap = nil end
+    refreshHistory(); snapshotAll(true)
+  elseif e == "PLAYER_REGEN_ENABLED" then refreshHistory(); applyVisibility(); snapshotAll(true)
+  elseif e == "PLAYER_REGEN_DISABLED" then applyVisibility(); snapshotAll(true)
+  else snapshotAll() end
 end)
