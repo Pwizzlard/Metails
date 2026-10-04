@@ -495,7 +495,7 @@ function CMD.report(a)
 end
 function CMD.help() print("Metails!\n" .. HELP) end
 
-local events, diagArmed = 0, false
+local events, diagArmed, refused = 0, false, {}
 local function probe(where)
   local s = session(views()[1], MODES[1].type)
   local me
@@ -508,6 +508,7 @@ local function probe(where)
 end
 function CMD.diag()
   print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
+  print("Metails!: events the client refused: " .. (#refused > 0 and table.concat(refused, ", ") or "none"))
   probe("outside a handler")
   diagArmed = true
   print("Metails!: the next damage meter event will print the same check from inside its handler.")
@@ -566,7 +567,7 @@ ev:SetScript("OnEvent", function(_, e)
     snapshotAll(true)
     C_Timer.NewTicker(0.5, function() snapshotAll(true) end)
     for _, name in ipairs({ "DAMAGE_METER_COMBAT_SESSION_UPDATED", "DAMAGE_METER_CURRENT_SESSION_UPDATED", "DAMAGE_METER_RESET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do
-      pcall(ev.RegisterEvent, ev, name)
+      if not pcall(ev.RegisterEvent, ev, name) then refused[#refused + 1] = name end
     end
   elseif e == "DAMAGE_METER_RESET" then
     for _, f in ipairs(windows) do f.snap = nil end
