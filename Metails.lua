@@ -507,15 +507,17 @@ local function probe(where)
     tag(me and me.totalAmount), tag(me and me.amountPerSecond), tag(s and s.durationSeconds)))
   if not me then return end
   local ok, src = pcall(C_DamageMeter.GetCombatSessionSourceFromType, views()[1].type, MODES[1].type, me.sourceGUID, me.sourceCreatureID)
-  local list = ok and plain(src) and src.combatSpells
-  local first = plain(list) and list[1]
-  print(("Metails! %s spells: call %s, source %s, list %s with %s entries, first spell id %s, amount %s, details %s"):format(where, ok and "ok" or ("failed: " .. tostring(src)),
-    tag(src), tag(list), plain(list) and tostring(#list) or "?", tag(first and first.spellID), tag(first and first.totalAmount), tag(first and first.combatSpellDetails)))
+  local list = ok and plain(src) and src.combatSpells or nil
+  local first = plain(list) and list[1] or nil
+  local fp = plain(first)
+  print(("Metails! %s spells: call %s, source %s, list %s with %s entries, first entry %s, its id %s, amount %s, details %s"):format(where, ok and "ok" or ("failed: " .. tostring(src)),
+    tag(src), tag(list), plain(list) and tostring(#list) or "?", tag(first), tag(fp and first.spellID), tag(fp and first.totalAmount), tag(fp and first.combatSpellDetails)))
 end
 function CMD.diag()
   print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
   print("Metails!: events the client refused: " .. (#refused > 0 and table.concat(refused, ", ") or "none"))
-  probe("outside a handler")
+  local ok, err = pcall(probe, "outside a handler")
+  if not ok then print("Metails! diag error: " .. tostring(err)) end
   diagArmed = true
   print("Metails!: the next damage meter event will print the same check from inside its handler.")
 end
@@ -582,7 +584,11 @@ ev:SetScript("OnEvent", function(_, e)
   elseif e == "PLAYER_REGEN_DISABLED" then applyVisibility(); snapshotAll(true)
   else
     events = events + 1
-    if diagArmed then diagArmed = false; probe("inside " .. e) end
+    if diagArmed then
+      diagArmed = false
+      local ok, err = pcall(probe, "inside " .. e)
+      if not ok then print("Metails! diag error: " .. tostring(err)) end
+    end
     snapshotAll()
   end
 end)
