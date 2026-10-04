@@ -255,13 +255,14 @@ end
 
 local function hideTip(r) if tip and not r:IsMouseOver() then tip:Hide() end end
 
-local refresh, applyVisibility
+local refresh, applyVisibility, updateRace
 
 local function snapshotAll(force)
   local now = GetTime()
   if not force and now - lastSnap < 0.25 then return end
   lastSnap = now
   for _, f in ipairs(windows) do if f:IsShown() then snapshot(f); refresh(f) end end
+  if updateRace then updateRace() end
 end
 
 local function report(f, chan, target, n)
@@ -434,6 +435,84 @@ local function newWindow(cfg)
   return f
 end
 
+local race, racing, pendingBoss
+
+local function bests()
+  local key = UnitName("player") .. "-" .. GetRealmName()
+  db.best = db.best or {}
+  db.best[key] = db.best[key] or {}
+  return db.best[key]
+end
+
+local function myRow(v, t)
+  local s = session(v, t)
+  for _, src in ipairs(s and plain(s.combatSources) and s.combatSources or {}) do
+    if plain(src) and plain(src.isLocalPlayer) and src.isLocalPlayer then return src, s end
+  end
+end
+
+local function raceFrame()
+  if race then return race end
+  race = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+  race:SetSize(WIDTH, 44)
+  race:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+  race:SetBackdropColor(0, 0, 0, db.opts.alpha)
+  race:SetPoint("TOPLEFT", windows[1], "BOTTOMLEFT", 0, -4)
+  race.title = race:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  race.title:SetPoint("TOPLEFT", 4, -3); race.title:SetPoint("TOPRIGHT", -4, -3); race.title:SetJustifyH("LEFT"); race.title:SetWordWrap(false)
+  for i, key in ipairs({ "dmg", "time" }) do
+    local b = CreateFrame("StatusBar", nil, race)
+    b:SetSize(WIDTH - 8, 11); b:SetPoint("TOPLEFT", 4, -(16 + (i - 1) * 13))
+    b:SetStatusBarTexture(TEXTURES[db.opts.texture])
+    b:SetStatusBarColor(i == 1 and 0.2 or 0.85, i == 1 and 0.75 or 0.55, 0.2, 0.9)
+    b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    b.text:SetPoint("LEFT", 3, 0)
+    race[key] = b
+  end
+  return race
+end
+
+function updateRace()
+  if not racing or not race then return end
+  local me, s = myRow(views()[1], MODES[1].type)
+  local total, dur = me and me.totalAmount or 0, s and s.durationSeconds or 0
+  race.dmg:SetMinMaxValues(0, racing.total); race.dmg:SetValue(total)
+  race.dmg.text:SetFormattedText("Damage  %s of %s", abbrev(total), fmt(racing.total))
+  race.time:SetMinMaxValues(0, racing.time); race.time:SetValue(dur)
+  race.time.text:SetFormattedText("Time  %ss of %ss", abbrev(dur), fmt(racing.time))
+end
+
+local function startRace(name)
+  local best = bests()[name]
+  if not best then return end
+  racing = best
+  raceFrame()
+  race.title:SetText(("vs best %s: %s in %ss"):format(name, fmt(best.total), fmt(best.time)))
+  race:Show()
+  updateRace()
+end
+
+local function recordBoss(name)
+  local me, s = myRow(views()[1], MODES[1].type)
+  if not me or not plain(me.totalAmount) or not plain(s.durationSeconds) then return false end
+  local deaths = DMT.Deaths and myRow(views()[1], DMT.Deaths)
+  if deaths and plain(deaths.totalAmount) and deaths.totalAmount > 0 then print("Metails!: " .. name .. " down, but you died, so it doesn't count as a best.") return true end
+  local rec = { total = me.totalAmount, rate = plain(me.amountPerSecond) and me.amountPerSecond or 0, time = s.durationSeconds, date = date("%Y-%m-%d"), spells = {} }
+  for _, sp in ipairs(spells(views()[1], MODES[1].type) or {}) do
+    if plain(sp) and plain(sp.spellID) and plain(sp.totalAmount) then rec.spells[spellName(sp.spellID)] = sp.totalAmount end
+  end
+  local best = bests()[name]
+  if best then
+    print(("Metails!: %s: %s in %ss, best was %s in %ss (%+.1f%%)"):format(name, fmt(rec.total), fmt(rec.time), fmt(best.total), fmt(best.time), (rec.total / max(best.total, 1) - 1) * 100))
+  end
+  if not best or rec.total > best.total then bests()[name] = rec; print("Metails!: new personal best on " .. name .. ": " .. fmt(rec.total) .. " in " .. fmt(rec.time) .. "s") end
+  return true
+end
+
+local function finishBoss()
+  if pendingBoss and recordBoss(pendingBoss) then pendingBoss = nil end
+end
+
 local function defaultWindow(i)
   return { mode = 1, view = 1, scale = 1, pos = { "CENTER", "CENTER", 300 - (i - 1) * 250, -150 } }
 end
@@ -461,7 +540,9 @@ local HELP = [[/metails - show or hide the window
 /metails texture <smooth|flat|raid> - bar texture
 /metails autohide <combat|ooc|off> - hide in combat or out of combat
 /metails minimap - show or hide the minimap button
-/metails diag - print whether the game is handing over readable numbers]]
+/metails diag - print whether the game is handing over readable numbers
+/metails bests - list your boss records (set by killing a dungeon or raid boss without dying)
+/metails forget <boss> - delete that record]]
 
 local minimapBtn
 local function minimapPos(b)
@@ -527,6 +608,14 @@ function CMD.report(a)
   report(windows[1], chan, target, tonumber(n))
 end
 function CMD.help() print("Metails!\n" .. HELP) end
+function CMD.bests()
+  local n = 0
+  for name, b in pairs(bests()) do n = n + 1; print(("Metails!: %s - %s in %ss (%s/s) on %s"):format(name, fmt(b.total), fmt(b.time), fmtRate(b.rate), b.date)) end
+  if n == 0 then print("Metails!: no boss records yet. Kill a dungeon or raid boss without dying to set one.") end
+end
+function CMD.forget(a)
+  if bests()[a] then bests()[a] = nil; print("Metails!: forgot " .. a) else print("Metails!: no record for '" .. a .. "'") end
+end
 
 local events, diagArmed, refused = 0, false, {}
 local function probe(where)
@@ -594,7 +683,7 @@ end
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
-ev:SetScript("OnEvent", function(_, e)
+ev:SetScript("OnEvent", function(_, e, ...)
   if e == "PLAYER_LOGIN" then
     if not DMT or not C_DamageMeter or #MODES == 0 then print("Metails!: this game client has no damage meter API, nothing to show.") return end
     MetailsDB = MetailsDB or {}
@@ -617,13 +706,21 @@ ev:SetScript("OnEvent", function(_, e)
     applyVisibility()
     snapshotAll(true)
     C_Timer.NewTicker(0.5, function() snapshotAll(true) end)
-    for _, name in ipairs({ "DAMAGE_METER_COMBAT_SESSION_UPDATED", "DAMAGE_METER_CURRENT_SESSION_UPDATED", "DAMAGE_METER_RESET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do
+    for _, name in ipairs({ "DAMAGE_METER_COMBAT_SESSION_UPDATED", "DAMAGE_METER_CURRENT_SESSION_UPDATED", "DAMAGE_METER_RESET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "ENCOUNTER_START", "ENCOUNTER_END" }) do
       if not pcall(ev.RegisterEvent, ev, name) then refused[#refused + 1] = name end
     end
   elseif e == "DAMAGE_METER_RESET" then
     for _, f in ipairs(windows) do f.snap = nil end
     refreshHistory(); snapshotAll(true)
-  elseif e == "PLAYER_REGEN_ENABLED" then refreshHistory(); applyVisibility(); snapshotAll(true)
+  elseif e == "ENCOUNTER_START" then
+    local _, name = ...
+    startRace(name)
+  elseif e == "ENCOUNTER_END" then
+    local _, name, _, _, success = ...
+    racing = nil
+    if race then race:Hide() end
+    if success == 1 then pendingBoss = name; C_Timer.After(3, finishBoss) end
+  elseif e == "PLAYER_REGEN_ENABLED" then refreshHistory(); applyVisibility(); snapshotAll(true); C_Timer.After(1, finishBoss)
   elseif e == "PLAYER_REGEN_DISABLED" then applyVisibility(); snapshotAll(true)
   else
     events = events + 1

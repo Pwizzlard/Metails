@@ -2,12 +2,13 @@ import lupa, pathlib
 
 L = lupa.LuaRuntime()
 L.execute(r"""
-now, incombat, chat, resets = 100, false, {}, 0
+now, incombat, chat, resets, deaths = 100, false, {}, 0, 0
 GetTime = function() return now end
 UnitAffectingCombat = function() return incombat end
 C_Spell = { GetSpellTexture = function(id) return id == SECRET and "tex?" or "tex" .. id end, GetSpellName = function(id) return id == SECRET and "Spell?" or "Spell" .. id end }
 tickers = {}
-C_Timer = { NewTicker = function(_, fn) tickers[#tickers + 1] = fn end }
+C_Timer = { NewTicker = function(_, fn) tickers[#tickers + 1] = fn end, After = function(_, fn) fn() end }
+UnitName, GetRealmName, date = function() return "Sam" end, function() return "Beta" end, function() return "2026-10-04" end
 SECRET = setmetatable({}, { __tostring = function() return "SECRET" end })
 local function S(v) return incombat and SECRET or v end
 AbbreviateNumbers = function(v) return v == SECRET and "~" or tostring(v) end
@@ -26,7 +27,7 @@ local function me() return { name = "Sam", sourceGUID = "Player-1", isLocalPlaye
 local bob = { name = "Bob", sourceGUID = "Player-2", isLocalPlayer = false, totalAmount = 3000, amountPerSecond = 300 }
 lastQuery = {}
 C_DamageMeter = {
-  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; return { combatSources = { bob, me() }, durationSeconds = 10 } end,
+  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; if mt == 9 then local d = me(); d.totalAmount = deaths or 0; return { combatSources = { bob, d }, durationSeconds = 10 } end; return { combatSources = { bob, me() }, durationSeconds = 10 } end,
   GetCombatSessionFromID = function(id, mt) lastQuery = { id = id, mt = mt }; return { combatSources = { me() }, durationSeconds = 5 } end,
   GetCombatSessionSourceFromType = function(st, mt, guid) return { combatSpells = {
     { spellID = S(133), totalAmount = S(1200), amountPerSecond = S(120), overkillAmount = S(50), combatSpellDetails = { unitName = "Hogger", amount = 1200, isMob = true } },
@@ -110,8 +111,9 @@ assert db.windows[1].mode == 5, "empty views are skipped when cycling"
 db.windows[1].mode = 7
 click(win, "LeftButton")
 assert db.windows[1].mode == 8
-mode(9)
-assert win.title.text == "Deaths - Current" and win.rate.text == "1.5k", win.rate.text
+db.windows[1].mode = 9
+g.tickers[1]()
+assert win.title.text == "Deaths - Current" and win.rate.text == "0", win.rate.text
 assert rows[1].left.text == "-1.0s +Bandage" and rows[1].right.text == "100 (75.0%)", (rows[1].left.text, rows[1].right.text)
 assert rows[2].left.text == "0.0s Bite" and rows[2].right.text == "500 (25.0%)" and rows[2].data.overkill == 10, rows[2].right.text
 
@@ -194,4 +196,28 @@ assert db.opts.minimapHidden is True
 
 slash("reset")
 assert g.resets == 1 and db.windows[1].view == 1
+
+fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
+assert not any(fr.dmg is not None for fr in list(g.frames.values())), "no race strip without a record"
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
+best = db.best["Sam-Beta"].Hogger
+assert best.total == 1500 and best.time == 10 and best.spells.Spell133 == 1200, dict(best)
+g.deaths = 1
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
+assert db.best["Sam-Beta"].Hogger.total == 1500, "a kill with a death must not overwrite"
+g.deaths = 0
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 0)
+assert db.best["Sam-Beta"].Hogger.date == "2026-10-04"
+fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
+race = [fr for fr in list(g.frames.values()) if fr.title is not None and fr.dmg is not None][0]
+assert race.title.text == "vs best Hogger: 1.5k in 10s", race.title.text
+assert race.dmg.text.text == "Damage  1.5k of 1.5k" and race.time.text.text == "Time  10s of 10s", (race.dmg.text.text, race.time.text.text)
+g.incombat = True
+g.tickers[1]()
+assert race.dmg.text.text == "Damage  ~ of 1.5k", race.dmg.text.text
+g.incombat = False
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
+slash("bests")
+slash("forget Hogger")
+assert db.best["Sam-Beta"].Hogger is None
 print("ok")

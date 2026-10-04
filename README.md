@@ -21,6 +21,7 @@ During a fight the client hands addons locked numbers. Metails! still draws them
 - Open a second window to watch damage and healing at once.
 - Hide automatically in or out of combat, change rows, opacity, bar texture and font size.
 - Minimap button, a keybind, and an entry under Options, AddOns with the command list and the main buttons.
+- Boss records: kill a dungeon or raid boss without dying and your damage, rate, time and spells are saved. Next time that boss starts, a strip under the window races your live damage and time against the record, and the kill prints how you did and updates the record if you beat it.
 
 ## Views
 
@@ -65,6 +66,8 @@ The minimap button shows or hides the window on left-click, opens the menu on ri
 /metails autohide combat      Hide in combat, out of combat (ooc), or off
 /metails minimap              Show or hide the minimap button
 /metails diag                 Print whether the game is handing over readable numbers
+/metails bests                List your boss records
+/metails forget Hogger        Delete a boss record
 ```
 
 ## Install
