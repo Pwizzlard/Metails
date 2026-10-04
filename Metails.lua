@@ -4,12 +4,12 @@ local secret = issecretvalue or function() return false end
 local function plain(v) return v ~= nil and not secret(v) end
 local DMT, DMS = Enum and Enum.DamageMeterType, Enum and Enum.DamageMeterSessionType
 local MODES = {}
-local function mode(label, t, kind) if t ~= nil then MODES[#MODES + 1] = { label = label, type = t, rate = kind == "rate", by = kind == "by", log = kind == "log" } end end
+local function mode(label, t, kind, tip) if t ~= nil then MODES[#MODES + 1] = { label = label, type = t, rate = kind == "rate", by = kind == "by", log = kind == "log", tip = tip or "Targets" } end end
 if DMT then
   mode("Damage Done", DMT.DamageDone or DMT.Dps, "rate")
-  mode("Damage Taken", DMT.DamageTaken, "rate")
-  mode("Damage Taken by Source", DMT.DamageTaken, "by")
-  mode("Avoidable Damage Taken", DMT.AvoidableDamageTaken)
+  mode("Damage Taken", DMT.DamageTaken, "rate", "From")
+  mode("Damage Taken by Source", DMT.DamageTaken, "by", "Spells")
+  mode("Avoidable Damage Taken", DMT.AvoidableDamageTaken, nil, "From")
   mode("Healing Done", DMT.HealingDone or DMT.Hps, "rate")
   mode("Absorbs", DMT.Absorbs)
   mode("Interrupts", DMT.Interrupts)
@@ -68,7 +68,7 @@ local function units(sp, out)
   if not plain(d) then return end
   if d.unitName ~= nil then d = { d } end
   for _, u in ipairs(d) do
-    if plain(u) and plain(u.unitName) and plain(u.amount) then out[#out + 1] = { name = u.unitName, amount = u.amount } end
+    if plain(u) and plain(u.unitName) and u.unitName ~= "" and plain(u.amount) and u.amount > 0 then out[#out + 1] = { name = u.unitName, amount = u.amount } end
   end
 end
 
@@ -151,7 +151,7 @@ local function rowTip(r)
   if (s.overkill or 0) > 0 then line("Overkill", fmt(s.overkill)) end
   if s.units and #s.units > 0 then
     table.sort(s.units, function(a, b) return a.amount > b.amount end)
-    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine(m.tip)
     for i = 1, min(5, #s.units) do line(s.units[i].name, fmt(s.units[i].amount) .. (" (%.0f%%)"):format(s.units[i].amount / max(s.amount, 1) * 100)) end
   end
   GameTooltip:Show()
@@ -202,10 +202,25 @@ local function openMenu(f)
   end)
 end
 
+local function hasData(f, i)
+  local s = session(views()[f.cfg.view] or views()[1], MODES[i].type)
+  if not s or not plain(s.combatSources) then return false end
+  for _, src in ipairs(s.combatSources) do
+    if plain(src) and plain(src.isLocalPlayer) and src.isLocalPlayer then return plain(src.totalAmount) and src.totalAmount > 0 end
+  end
+  return false
+end
+
 local function onClick(r, btn)
   local f = r.win or r
   if f.dragged then f.dragged = nil return end
-  if btn == "LeftButton" then f.cfg.mode = (f.cfg.mode - 1 + (IsShiftKeyDown() and -1 or 1)) % #MODES + 1
+  if btn == "LeftButton" then
+    local step, i = IsShiftKeyDown() and -1 or 1, f.cfg.mode
+    for _ = 1, #MODES do
+      i = (i - 1 + step) % #MODES + 1
+      if hasData(f, i) then break end
+    end
+    f.cfg.mode = hasData(f, i) and i or (f.cfg.mode - 1 + step) % #MODES + 1
   elseif MenuUtil and MenuUtil.CreateContextMenu then openMenu(f) return
   else f.cfg.view = f.cfg.view % #views() + 1 end
   snapshot(f); refresh(f)

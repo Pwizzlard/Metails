@@ -21,10 +21,10 @@ local me = { name = "Sam", sourceGUID = "Player-1", isLocalPlayer = true, totalA
 local bob = { name = "Bob", sourceGUID = "Player-2", isLocalPlayer = false, totalAmount = 3000, amountPerSecond = 300 }
 lastQuery = {}
 C_DamageMeter = {
-  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; return { combatSources = { bob, me }, durationSeconds = 10 } end,
+  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; return { combatSources = { bob, me }, durationSeconds = 10 } end,
   GetCombatSessionFromID = function(id, mt) lastQuery = { id = id, mt = mt }; return { combatSources = { me }, durationSeconds = 5 } end,
   GetCombatSessionSourceFromType = function(st, mt, guid) return { combatSpells = {
-    { spellID = 133, totalAmount = 1200, amountPerSecond = 120, overkillAmount = 50, combatSpellDetails = { { unitName = "Hogger", amount = 1000 }, { unitName = "Boar", amount = 200 } } },
+    { spellID = 133, totalAmount = 1200, amountPerSecond = 120, overkillAmount = 50, combatSpellDetails = { { unitName = "Hogger", amount = 1000 }, { unitName = "Boar", amount = 200 }, { unitName = "", amount = 0 }, { unitName = "Ghost", amount = 0 } } },
     { spellID = 1, totalAmount = 300, amountPerSecond = 30, creatureName = "Kitty", combatSpellDetails = { unitName = "Hogger", amount = 300 } },
     { spellID = 2, totalAmount = 0 } } } end,
   GetCombatSessionSourceFromID = function(id, mt, guid) return { combatSpells = { { spellID = 133, totalAmount = 10, amountPerSecond = 2 } } } end,
@@ -92,12 +92,20 @@ assert rows[1].left.text == "Hogger" and rows[1].right.text == "1.3k (86.7%)", (
 assert rows[2].left.text == "Boar" and rows[2].right.text == "200 (13.3%)", rows[2].right.text
 assert g.lastQuery.mt == 2
 
+db.windows[1].mode = 3
+click(win, "LeftButton")
+assert db.windows[1].mode == 5, "empty views are skipped when cycling"
+db.windows[1].mode = 7
+click(win, "LeftButton")
+assert db.windows[1].mode == 8
 mode(9)
 assert win.title.text == "Deaths - Current" and win.rate.text == "1.5k", win.rate.text
 assert rows[1].left.text == "-1.0s +Bandage" and rows[1].right.text == "100 (75.0%)", (rows[1].left.text, rows[1].right.text)
 assert rows[2].left.text == "0.0s Bite" and rows[2].right.text == "500 (25.0%)" and rows[2].data.overkill == 10, rows[2].right.text
 
-mode(1)
+db.windows[1].mode = 9
+click(win, "LeftButton")
+assert db.windows[1].mode == 1
 click(win, "RightButton")
 assert db.windows[1].view == 2 and win.title.text == "Damage Done - Previous" and g.lastQuery.st == 2, win.title.text
 click(win, "RightButton")
