@@ -184,8 +184,7 @@ local function tipLine(i, left, right)
   l.left:Show(); l.right:Show()
 end
 
-local function rowTip(r)
-  local s, m = r.data, r.mode
+local function showTip(win, over, title, fill)
   if not tip then
     tip = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     tip.isTip, tip.lines = true, {}
@@ -202,11 +201,25 @@ local function rowTip(r)
       if not (s.row and s.row:IsMouseOver()) then s:Hide() end
     end)
   end
-  tip.row, tip.t = r, 0
+  tip.row, tip.t = over, 0
   for _, l in ipairs(tip.lines) do l.left:Hide(); l.right:Hide() end
-  tip.title:SetText(s.name)
+  tip.title:SetText(title)
   local n = 0
-  local function line(l, v) n = n + 1; tipLine(n, l, v) end
+  fill(function(l, v) n = n + 1; tipLine(n, l, v) end)
+  tip:SetHeight(26 + n * 14)
+  tip:ClearAllPoints(); tip:SetPoint("TOPLEFT", win, "TOPRIGHT", 4, 0)
+  tip:Show()
+end
+
+local HOW = { { "Left-click", "next view" }, { "Shift-click", "previous view" }, { "Right-click", "menu" }, { "Mouse wheel", "fight" }, { "Drag", "move" }, { "/metails help", "commands" } }
+
+local function windowTip(f)
+  showTip(f, f, "Metails!", function(line) for _, h in ipairs(HOW) do line(h[1], h[2]) end end)
+end
+
+local function rowTip(r)
+  local s, m = r.data, r.mode
+  showTip(r.win, r, s.name, function(line)
   if m.log and plain(s.pct) then line("Health after", ("%.0f%%"):format(s.pct)) end
   if s.rate ~= nil then line("Per second", abbrev(s.rate, true)) end
   if s.overkill then line("Overkill", abbrev(s.overkill)) end
@@ -220,9 +233,7 @@ local function rowTip(r)
       line(u.name, unlocked and (fmt(u.amount) .. (" (%.0f%%)"):format(u.amount / max(s.amount, 1) * 100)) or abbrev(u.amount))
     end
   end
-  tip:SetHeight(26 + n * 14)
-  tip:ClearAllPoints(); tip:SetPoint("TOPLEFT", r.win, "TOPRIGHT", 4, 0)
-  tip:Show()
+  end)
 end
 
 local function hideTip(r) if tip and not r:IsMouseOver() then tip:Hide() end end
@@ -388,13 +399,8 @@ local function newWindow(cfg)
   f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing(); local p, _, rp, x, y = s:GetPoint(); cfg.pos = { p, rp, x, y } end)
   f:SetScript("OnMouseUp", onClick)
   f:SetScript("OnMouseWheel", function(s, d) cfg.view = (cfg.view - 1 - d) % #views() + 1; snapshot(s); refresh(s) end)
-  f:SetScript("OnEnter", function(s)
-    GameTooltip:SetOwner(s, "ANCHOR_TOP")
-    GameTooltip:AddLine("Metails!")
-    GameTooltip:AddLine("Left-click: next view (shift: previous)\nRight-click: menu   Wheel: fight   Drag: move\n/metails help for commands", 1, 1, 1)
-    GameTooltip:Show()
-  end)
-  f:SetScript("OnLeave", GameTooltip_Hide)
+  f:SetScript("OnEnter", windowTip)
+  f:SetScript("OnLeave", hideTip)
   f.header = f:CreateTexture(nil, "BACKGROUND")
   f.header:SetPoint("TOPLEFT"); f.header:SetPoint("TOPRIGHT"); f.header:SetHeight(18)
   f.header:SetColorTexture(f.color.r * 0.45, f.color.g * 0.45, f.color.b * 0.45, 0.9)
