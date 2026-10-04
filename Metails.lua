@@ -184,7 +184,15 @@ local function rowTip(r)
     tip:SetBackdropColor(0.05, 0.05, 0.05, 0.95); tip:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     tip.title = tip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     tip.title:SetPoint("TOPLEFT", 8, -6); tip.title:SetPoint("TOPRIGHT", -8, -6); tip.title:SetJustifyH("LEFT"); tip.title:SetWordWrap(false)
+    tip:EnableMouse(false)
+    tip:SetScript("OnUpdate", function(s, dt)
+      s.t = (s.t or 0) + dt
+      if s.t < 0.1 then return end
+      s.t = 0
+      if not (s.row and s.row:IsMouseOver()) then s:Hide() end
+    end)
   end
+  tip.row, tip.t = r, 0
   for _, l in ipairs(tip.lines) do l.left:Hide(); l.right:Hide() end
   tip.title:SetText(s.name)
   local n = 0
@@ -207,7 +215,7 @@ local function rowTip(r)
   tip:Show()
 end
 
-local function hideTip() if tip then tip:Hide() end end
+local function hideTip(r) if tip and not r:IsMouseOver() then tip:Hide() end end
 
 local refresh, applyVisibility
 
