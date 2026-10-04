@@ -255,7 +255,7 @@ end
 
 local function hideTip(r) if tip and not r:IsMouseOver() then tip:Hide() end end
 
-local refresh, applyVisibility, updateRace
+local refresh, applyVisibility, updateRace, captured
 
 local function snapshotAll(force)
   local now = GetTime()
@@ -675,7 +675,7 @@ function CMD.forget(a)
   if bests()[a] then bests()[a] = nil; print("Metails!: forgot " .. a) else print("Metails!: no record for '" .. a .. "'") end
 end
 
-local events, diagArmed, refused, captured = 0, false, {}, nil
+local events, diagArmed, refused = 0, false, {}
 local function probe(where)
   local s = session(views()[1], MODES[1].type)
   local me
