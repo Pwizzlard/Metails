@@ -2,7 +2,7 @@ import lupa, pathlib
 
 L = lupa.LuaRuntime()
 L.execute(r"""
-now, incombat, chat, resets, deaths = 100, false, {}, 0, 0
+now, incombat, chat, resets, deaths, dur = 100, false, {}, 0, 0, 10
 GetTime = function() return now end
 UnitAffectingCombat = function() return incombat end
 C_Spell = { GetSpellTexture = function(id) return id == SECRET and "tex?" or "tex" .. id end, GetSpellName = function(id) return id == SECRET and "Spell?" or "Spell" .. id end }
@@ -27,7 +27,7 @@ local function me() return { name = "Sam", sourceGUID = "Player-1", isLocalPlaye
 local bob = { name = "Bob", sourceGUID = "Player-2", isLocalPlayer = false, totalAmount = 3000, amountPerSecond = 300 }
 lastQuery = {}
 C_DamageMeter = {
-  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; if mt == 9 then local d = me(); d.totalAmount = deaths or 0; return { combatSources = { bob, d }, durationSeconds = 10 } end; return { combatSources = { bob, me() }, durationSeconds = 10 } end,
+  GetCombatSessionFromType = function(st, mt) lastQuery = { st = st, mt = mt }; if mt == 3 or mt == 6 then return { combatSources = { bob }, durationSeconds = 10 } end; if mt == 9 then local d = me(); d.totalAmount = deaths or 0; return { combatSources = { bob, d }, durationSeconds = dur } end; return { combatSources = { bob, me() }, durationSeconds = dur } end,
   GetCombatSessionFromID = function(id, mt) lastQuery = { id = id, mt = mt }; return { combatSources = { me() }, durationSeconds = 5 } end,
   GetCombatSessionSourceFromType = function(st, mt, guid) return { combatSpells = {
     { spellID = S(133), totalAmount = S(1200), amountPerSecond = S(120), overkillAmount = S(50), combatSpellDetails = { unitName = "Hogger", amount = 1200, isMob = true } },
@@ -198,17 +198,22 @@ slash("reset")
 assert g.resets == 1 and db.windows[1].view == 1
 
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
-assert not any(fr.bars is not None for fr in list(g.frames.values())), "no race strip without a record"
+assert not any(fr.bars is not None for fr in list(g.frames.values())), "no race box without a record"
+fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
+assert db.best["Sam-Beta"].Hogger.best.time == 10
+fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
+assert not any(fr.bars is not None for fr in list(g.frames.values())), "no race box for a kill under a minute"
+g.dur = 90
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
 e = db.best["Sam-Beta"].Hogger
-assert e.best.total == 1500 and e.best.time == 10 and e.best.spells.Spell133 == 1200 and e.last.total == 1500, dict(e.best)
+assert e.best.total == 1500 and e.best.time == 10 and e.best.spells.Spell133 == 1200 and e.last.time == 90, dict(e.last)
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
 race = [fr for fr in list(g.frames.values()) if fr.bars is not None][0]
-assert race.title.text == "Hogger" and race.bars[1].text.text == "Best  1.5k in 10s (150.0/s)" and race.bars[2].text.text == "Current  1.5k in 10s", (race.bars[1].text.text, race.bars[2].text.text)
-assert race.bars[3] is None, "previous is hidden when it is the same kill as best"
+assert race.title.text == "Race: Hogger" and race.bars[1].text.text == "Best  1.5k in 10s (150.0/s)" and race.bars[2].text.text == "Previous  1.5k in 90s (150.0/s)" and race.bars[3].text.text == "Current  1.5k in 90s", (race.bars[1].text.text, race.bars[2].text.text)
+assert race.bars[4] is None
 g.incombat = True
 g.tickers[1]()
-assert race.bars[2].text.text == "Current  ~ in 10s", race.bars[2].text.text
+assert race.bars[3].text.text == "Current  ~ in 90s", race.bars[3].text.text
 g.incombat = False
 g.deaths = 1
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
@@ -217,7 +222,7 @@ g.deaths = 0
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 0)
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
 g.tickers[1]()
-assert race.bars[2].text.text.startswith("Current"), race.bars[2].text.text
+assert race.bars[3].text.text.startswith("Current"), race.bars[3].text.text
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
 slash("bests")
 slash("forget Hogger")

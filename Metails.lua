@@ -457,9 +457,17 @@ local function raceFrame()
   race:SetSize(WIDTH, 44)
   race:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
   race:SetBackdropColor(0, 0, 0, db.opts.alpha)
-  race:SetPoint("TOPLEFT", windows[1], "BOTTOMLEFT", 0, -4)
+  local pos = db.opts.racePos
+  race:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
+  race:SetMovable(true); race:EnableMouse(true); race:SetClampedToScreen(true); race:RegisterForDrag("LeftButton")
+  race:SetScript("OnDragStart", race.StartMoving)
+  race:SetScript("OnDragStop", function(r) r:StopMovingOrSizing(); local p, _, rp, x, y = r:GetPoint(); db.opts.racePos = { p, rp, x, y } end)
+  race.header = race:CreateTexture(nil, "BACKGROUND")
+  race.header:SetPoint("TOPLEFT"); race.header:SetPoint("TOPRIGHT"); race.header:SetHeight(16)
+  local c = windows[1].color
+  race.header:SetColorTexture(c.r * 0.45, c.g * 0.45, c.b * 0.45, 0.9)
   race.title = race:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  race.title:SetPoint("TOPLEFT", 4, -3); race.title:SetPoint("TOPRIGHT", -4, -3); race.title:SetJustifyH("LEFT"); race.title:SetWordWrap(false)
+  race.title:SetPoint("TOPLEFT", 4, -2); race.title:SetPoint("TOPRIGHT", -4, -2); race.title:SetJustifyH("LEFT"); race.title:SetWordWrap(false)
   race.bars = {}
   return race
 end
@@ -513,10 +521,10 @@ end
 
 local function startRace(name)
   local e = entry(name)
-  if not e or not e.last then return end
+  if not e or not e.last or max(e.last.time, e.best and e.best.time or 0) <= 60 then return end
   racing = e
   raceFrame()
-  race.title:SetText(name)
+  race.title:SetText("Race: " .. name)
   race:Show()
   updateRace()
 end
@@ -737,7 +745,8 @@ ev:SetScript("OnEvent", function(_, e, ...)
     local o = type(db.opts) == "table" and db.opts or {}
     db.opts = { rows = num(o.rows, 1, 40, 10), alpha = num(o.alpha, 0, 1, 0.55), fontsize = num(o.fontsize, 6, 20, 10),
                 texture = TEXTURES[o.texture] and o.texture or "smooth", autohide = o.autohide or "off",
-                minimap = num(o.minimap, -360, 360, 220), minimapHidden = o.minimapHidden == true }
+                minimap = num(o.minimap, -360, 360, 220), minimapHidden = o.minimapHidden == true,
+                racePos = type(o.racePos) == "table" and type(o.racePos[3]) == "number" and o.racePos or { "CENTER", "CENTER", 300, -260 } }
     for _, w in ipairs(db.windows) do newWindow(w) end
     buildMinimap(); buildOptions()
     refreshHistory()
