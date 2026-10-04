@@ -206,6 +206,7 @@ local function showTip(win, over, title, fill)
   tip.title:SetText(title)
   local n = 0
   fill(function(l, v) n = n + 1; tipLine(n, l, v) end)
+  if n == 0 then tip:Hide() return end
   tip:SetHeight(26 + n * 14)
   tip:ClearAllPoints(); tip:SetPoint("TOPLEFT", win, "TOPRIGHT", 4, 0)
   tip:Show()
@@ -225,7 +226,6 @@ local function rowTip(r)
   local s, m = r.data, r.mode
   showTip(r.win, r, s.name, function(line)
   if m.log and plain(s.pct) then line("Health after", ("%.0f%%"):format(s.pct)) end
-  if s.rate ~= nil then line("Per second", abbrev(s.rate, true)) end
   if s.overkill then line("Overkill", abbrev(s.overkill)) end
   if s.avoidable then line("Avoidable", "yes") end
   if plain(s.spellID) and plain(s.amount) and (views()[r.win.cfg.view] or {}).type ~= DMS.Overall and not m.by and not m.log then

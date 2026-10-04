@@ -151,7 +151,7 @@ assert rows[1].left.text == "Spell?" and rows[1].right.text == "~ (~)" and g.iss
 assert rows[2].left.text == "Spell1 (Kitty)" and rows[2].right.text == "300 (30.0)", rows[2].right.text
 rows[1].scripts.OnEnter(rows[1])
 tip = [fr for fr in list(g.frames.values()) if fr.isTip][0]
-assert tip.title.text == "Spell?" and tip.lines[1].left.text == "Per second" and tip.lines[1].right.text == "~", (tip.title.text, tip.lines[1].right.text)
+assert tip.title.text == "Spell?", tip.title.text
 rows[1].scripts.OnLeave(rows[1])
 win.scripts.OnEnter(win)
 assert tip.title.text == "Metails!" and tip.lines[1].left.text == "Fight length (s)" and tip.lines[1].right.text == "10" and tip.lines[2].left.text == "Left-click" and tip.lines[7].left.text == "/metails help", tip.lines[1].left.text
@@ -166,10 +166,10 @@ g.now = 120
 g.tickers[1]()
 assert rows[1].right.text == "1.2k (120.0, 80.0%)", rows[1].right.text
 rows[1].scripts.OnEnter(rows[1])
-assert tip.title.text == "Spell133" and tip.lines[1].right.text == "120.0" and tip.lines[2].left.text == "Overkill" and tip.lines[2].right.text == "50"
-assert tip.lines[3].left.text == "Overall" and tip.lines[3].right.text == "1.2k (80.0%)", tip.lines[3].right.text
+assert tip.title.text == "Spell133" and tip.lines[1].left.text == "Overkill" and tip.lines[1].right.text == "50"
+assert tip.lines[2].left.text == "Overall" and tip.lines[2].right.text == "1.2k (80.0%)", tip.lines[2].right.text
 rows[2].scripts.OnEnter(rows[2])
-assert tip.title.text == "Spell1 (Kitty)" and tip.lines[3].left.text == "Cast by" and tip.lines[3].right.text == "Kitty", tip.lines[3].left.text
+assert tip.title.text == "Spell1 (Kitty)" and tip.lines[1].left.text == "Overall" and tip.lines[2].left.text == "Cast by" and tip.lines[2].right.text == "Kitty", tip.lines[2].left.text
 
 slash("new")
 assert len(db.windows) == 2 and len(g.windowsOf()) == 2
