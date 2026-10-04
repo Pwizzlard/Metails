@@ -2,7 +2,7 @@
 ## Title: Metails! Personal Damage Meter
 ## Notes: Personal combat meter on the Blizzard damage meter API. Your damage, healing, interrupts, deaths and more. Nobody else's.
 ## Author: Pwizzlard
-## Version: 2.2.2
+## Version: 2.2.3
 ## IconTexture: Interface\Icons\Ability_Warrior_Rampage
 ## X-Website: https://github.com/Pwizzlard/Metails
 ## X-Category: Combat

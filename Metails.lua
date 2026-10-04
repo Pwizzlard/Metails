@@ -505,6 +505,12 @@ local function probe(where)
   local function tag(v) return v == nil and "nil" or secret(v) and "secret" or "readable" end
   print(("Metails! %s: session %s, you %s, total %s, per second %s, duration %s"):format(where, s and "found" or "none", me and "found" or "none",
     tag(me and me.totalAmount), tag(me and me.amountPerSecond), tag(s and s.durationSeconds)))
+  if not me then return end
+  local ok, src = pcall(C_DamageMeter.GetCombatSessionSourceFromType, views()[1].type, MODES[1].type, me.sourceGUID, me.sourceCreatureID)
+  local list = ok and plain(src) and src.combatSpells
+  local first = plain(list) and list[1]
+  print(("Metails! %s spells: call %s, source %s, list %s with %s entries, first spell id %s, amount %s, details %s"):format(where, ok and "ok" or ("failed: " .. tostring(src)),
+    tag(src), tag(list), plain(list) and tostring(#list) or "?", tag(first and first.spellID), tag(first and first.totalAmount), tag(first and first.combatSpellDetails)))
 end
 function CMD.diag()
   print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
