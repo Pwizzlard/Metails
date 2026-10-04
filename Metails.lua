@@ -70,8 +70,8 @@ local function session(v, t)
   return ok and plain(s) and s or nil
 end
 
-local function spells(v, t, me)
-  local ok, s = pcall(v.id and C_DamageMeter.GetCombatSessionSourceFromID or C_DamageMeter.GetCombatSessionSourceFromType, v.id or v.type, t, me.sourceGUID, me.sourceCreatureID)
+local function spells(v, t)
+  local ok, s = pcall(v.id and C_DamageMeter.GetCombatSessionSourceFromID or C_DamageMeter.GetCombatSessionSourceFromType, v.id or v.type, t, UnitGUID("player"))
   return ok and plain(s) and plain(s.combatSpells) and s.combatSpells or nil
 end
 
@@ -122,7 +122,7 @@ local function snapshot(f)
       if plain(me.deathRecapID) and C_DeathRecap then deathRows(me.deathRecapID, snap.rows) end
     else
       local byUnit = {}
-      for _, sp in ipairs(spells(v, m.type, me) or {}) do
+      for _, sp in ipairs(spells(v, m.type) or {}) do
         local amt = plain(sp) and sp.totalAmount or nil
         if amt ~= nil and (secret(amt) or amt > 0) and sp.spellID ~= nil then
           local name = secret(sp.spellID) and C_Spell.GetSpellName(sp.spellID) or spellName(sp.spellID)
@@ -506,7 +506,7 @@ local function probe(where)
   print(("Metails! %s: session %s, you %s, total %s, per second %s, duration %s"):format(where, s and "found" or "none", me and "found" or "none",
     tag(me and me.totalAmount), tag(me and me.amountPerSecond), tag(s and s.durationSeconds)))
   if not me then return end
-  local ok, src = pcall(C_DamageMeter.GetCombatSessionSourceFromType, views()[1].type, MODES[1].type, me.sourceGUID, me.sourceCreatureID)
+  local ok, src = pcall(C_DamageMeter.GetCombatSessionSourceFromType, views()[1].type, MODES[1].type, UnitGUID("player"))
   local list = ok and plain(src) and src.combatSpells or nil
   local first = plain(list) and list[1] or nil
   local fp = plain(first)

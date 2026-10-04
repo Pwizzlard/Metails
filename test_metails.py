@@ -12,6 +12,7 @@ SECRET = setmetatable({}, { __tostring = function() return "SECRET" end })
 local function S(v) return incombat and SECRET or v end
 AbbreviateNumbers = function(v) return v == SECRET and "~" or tostring(v) end
 UnitClass = function() return "Mage", "MAGE" end
+UnitGUID = function() return "Player-1" end
 RAID_CLASS_COLORS = { MAGE = { r = 0, g = 0, b = 1 } }
 GameTooltip_Hide = function() end
 IsShiftKeyDown, IsInRaid, IsInGroup = function() return false end, function() return false end, function() return true end
