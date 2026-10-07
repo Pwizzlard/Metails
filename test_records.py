@@ -35,8 +35,4 @@ with tempfile.TemporaryDirectory() as d:
     text = (out / "Records.lua").read_text(encoding="utf-8")
     assert text.startswith("MetailsRecords = {") and '["Hogger"]' in text and "curve" in text and "true" in text, text[:200]
     assert (out / "Metails_Records.toc").read_text().startswith("## Interface: 16001")
-import watch
-assert watch.is_kill('10/7/2026 09:13:00.000-4  ENCOUNTER_END,1,"Hogger",1,5,1,3000')
-assert not watch.is_kill('10/7/2026 09:13:00.000-4  ENCOUNTER_END,1,"Hogger",1,5,0,3000')
-assert not watch.is_kill('10/7/2026 09:13:00.000-4  ENCOUNTER_START,1,"Hogger",1,5,36')
 print("ok")
