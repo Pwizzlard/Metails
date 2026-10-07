@@ -548,8 +548,47 @@ local function recordBoss(name)
   return true
 end
 
+local CELLPX, ROWCELLS, seq = 4, 64, 0
+
+function Metails_Encode(payload)
+  local v = { 5, 2, seq, math.floor(#payload / 8), #payload % 8 }
+  for i = 1, #payload do
+    local b = payload:byte(i)
+    v[#v + 1] = math.floor(b / 64); v[#v + 1] = math.floor(b / 8) % 8; v[#v + 1] = b % 8
+  end
+  local sum = 0
+  for i = 3, #v do sum = sum + v[i] end
+  v[#v + 1] = sum % 8
+  return v
+end
+
+local strip
+local function signal(payload)
+  if not strip then
+    strip = CreateFrame("Frame", nil, UIParent)
+    strip:SetFrameStrata("TOOLTIP"); strip:SetFrameLevel(10000)
+    strip:SetPoint("TOPLEFT"); strip:SetSize(ROWCELLS * CELLPX, 3 * CELLPX)
+    strip.cells = {}
+    for i = 1, 6 + 3 * 20 do
+      local t = strip:CreateTexture(nil, "OVERLAY"); t:SetSize(CELLPX, CELLPX)
+      t:SetPoint("TOPLEFT", ((i - 1) % ROWCELLS) * CELLPX, -math.floor((i - 1) / ROWCELLS) * CELLPX); strip.cells[i] = t
+    end
+    local function rescale() local _, h = GetPhysicalScreenSize(); strip:SetScale(768 / h / UIParent:GetEffectiveScale()) end
+    strip:RegisterEvent("UI_SCALE_CHANGED"); strip:RegisterEvent("DISPLAY_SIZE_CHANGED"); strip:SetScript("OnEvent", rescale)
+    rescale()
+  end
+  seq = (seq + 1) % 8
+  local v = Metails_Encode(payload)
+  for i, t in ipairs(strip.cells) do
+    if v[i] then t:SetColorTexture(math.floor(v[i] / 4) % 2, math.floor(v[i] / 2) % 2, v[i] % 2); t:Show() else t:Hide() end
+  end
+  strip:Show()
+  local my = seq
+  C_Timer.After(3, function() if seq == my then strip:Hide() end end)
+end
+
 local function finishBoss()
-  if pendingBoss and recordBoss(pendingBoss) then pendingBoss = nil end
+  if pendingBoss and recordBoss(pendingBoss) then pendingBoss = nil; signal("metails=records") end
 end
 
 local loggedByUs = false

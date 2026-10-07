@@ -11,6 +11,7 @@ C_Timer = { NewTicker = function(_, fn) tickers[#tickers + 1] = fn end, After = 
 UnitName, GetRealmName, date = function() return "Sam" end, function() return "Beta" end, function() return "2026-10-04" end
 instance, logging = "none", false
 IsInInstance = function() return instance ~= "none", instance end
+GetPhysicalScreenSize = function() return 3840, 2160 end
 LoggingCombat = function(v) if v ~= nil then logging = v end return logging end
 SECRET = setmetatable({}, { __tostring = function() return "SECRET" end })
 local function S(v) return incombat and SECRET or v end
@@ -63,6 +64,7 @@ local function stub()
     if k == "Hide" then return function(self) self.shown = false end end
     if k == "SetFormattedText" then return function(self, f, ...) self.text = f:format(...) end end
     if k == "SetValue" then return function(self, v) self.value = v end end
+    if k == "SetColorTexture" then return function(self, r, g, b) self.rgb = { r, g, b } end end
     if k == "SetPoint" then return function(self, ...) self.point = { ... } end end
     if k == "CreateFontString" or k == "CreateTexture" then return function() return stub() end end
     return function() end
@@ -207,6 +209,13 @@ fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
 assert db.best["Sam-Beta"].Hogger.best.time == 10
 g.dur = 90
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
+strip = [fr for fr in list(g.frames.values()) if fr.cells is not None][0]
+assert strip.cells is not None
+cells = [c for c in list(strip.cells.values())]
+v = [c.rgb[1] * 4 + c.rgb[2] * 2 + c.rgb[3] for c in cells if c.shown]
+n = v[3] * 8 + v[4]
+assert v[:2] == [5, 2] and len(v) == 6 + 3 * n and v[-1] == sum(v[2:-1]) % 8, v
+assert bytes(v[5 + 3 * i] * 64 + v[6 + 3 * i] * 8 + v[7 + 3 * i] for i in range(n)).decode() == "metails=records"
 e = db.best["Sam-Beta"].Hogger
 assert e.best.total == 1500 and e.best.time == 10 and e.best.spells.Spell133 == 1200 and e.last.time == 90, dict(e.last)
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)

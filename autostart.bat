@@ -1,11 +1,11 @@
 @echo off
-schtasks /query /tn "Metails records" >nul 2>&1
-if %errorlevel%==0 (
-    schtasks /delete /tn "Metails records" /f >nul
-    echo Metails records task removed. Your records stay as they are.
+set "link=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Metails watcher.cmd"
+if exist "%link%" (
+    del "%link%"
+    echo Metails watcher removed from Startup. Close any running pythonw watcher yourself if you like.
 ) else (
-    schtasks /create /tn "Metails records" /sc hourly /tr "pythonw \"%~dp0records.py\"" /f >nul
-    schtasks /run /tn "Metails records" >nul
-    echo Metails will now import boss kill curves from your combat logs once an hour. Run this again to stop.
+    > "%link%" echo start "" /min pythonw "%~dp0watcher.pyw"
+    start "" /min pythonw "%~dp0watcher.pyw"
+    echo Metails watcher started and added to Startup. It imports your boss kill curves right after each kill. Run this again to remove it.
 )
 pause
