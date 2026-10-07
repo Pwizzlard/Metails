@@ -512,7 +512,7 @@ function updateRace()
   n = n + 1
   local cur = raceBar(n, "Current")
   cur:SetMinMaxValues(0, top); cur:SetValue(total)
-  cur.text:SetFormattedText("Current  %s in %ds", abbrev(total), t)
+  cur.text:SetFormattedText("Current  %s in %ds", abbrev(total), math.floor(t))
   for i = n + 1, #race.bars do race.bars[i]:Hide() end
   race:SetHeight(18 + n * 13)
 end
