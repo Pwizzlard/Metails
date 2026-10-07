@@ -425,7 +425,7 @@ local function newWindow(cfg)
   return f
 end
 
-local race, racing, pendingBoss
+local race, racing, pendingBoss, raceStart
 
 local function bests()
   local key = UnitName("player") .. "-" .. GetRealmName()
@@ -482,6 +482,11 @@ end
 local function entry(name)
   local e = bests()[name]
   if e and e.total then e = { best = e, last = e }; bests()[name] = e end
+  local imp = MetailsRecords and MetailsRecords[UnitName("player")] and MetailsRecords[UnitName("player")][name]
+  if not imp then return e end
+  e = e or {}
+  if imp.best and (not e.best or imp.best.total >= e.best.total) then e.best = imp.best end
+  if imp.last and (not e.last or (imp.last.at or 0) >= (e.last.at or 0)) then e.last = imp.last end
   return e
 end
 
@@ -489,30 +494,33 @@ local function same(a, b) return a and b and a.total == b.total and a.time == b.
 
 function updateRace()
   if not racing or not race then return end
-  local me, s = myRow(views()[1], MODES[1].type)
-  local total, dur = me and me.totalAmount or 0, s and s.durationSeconds or 0
+  local me = myRow(views()[1], MODES[1].type)
+  local total, t = me and me.totalAmount or 0, GetTime() - raceStart
   local top = max(racing.best and racing.best.total or 0, racing.last and racing.last.total or 0, 1)
   local n = 0
   for _, pair in ipairs({ { "Best", racing.best }, { "Previous", not same(racing.best, racing.last) and racing.last or nil } }) do
-    if pair[2] then
+    local rec = pair[2]
+    if rec then
       n = n + 1
       local b = raceBar(n, pair[1])
-      b:SetMinMaxValues(0, pair[2].time * top / max(pair[2].total, 1)); b:SetValue(dur)
-      b.text:SetText(("%s pace  %s in %ss (%s/s)"):format(pair[1], fmt(pair[2].total), fmt(pair[2].time), fmtRate(pair[2].rate)))
+      b:SetMinMaxValues(0, top)
+      if rec.curve then b:SetValue(rec.curve[min(#rec.curve, math.floor(t) + 1)] or 0)
+      else b:SetValue(min(t / max(rec.time, 1), 1) * rec.total) end
+      b.text:SetText(("%s%s  %s in %ss (%s/s)"):format(pair[1], rec.curve and "" or " pace", fmt(rec.total), fmt(rec.time), fmtRate(rec.rate)))
     end
   end
   n = n + 1
   local cur = raceBar(n, "Current")
   cur:SetMinMaxValues(0, top); cur:SetValue(total)
-  cur.text:SetFormattedText("Current  %s in %ss", abbrev(total), abbrev(dur))
+  cur.text:SetFormattedText("Current  %s in %ds", abbrev(total), t)
   for i = n + 1, #race.bars do race.bars[i]:Hide() end
   race:SetHeight(18 + n * 13)
 end
 
 local function startRace(name)
   local e = entry(name)
-  if not db.opts.racing or not e or not e.last or max(e.last.time, e.best and e.best.time or 0) <= 60 then return end
-  racing = e
+  if not db.opts.racing or not e or not (e.best or e.last) or max(e.best and e.best.time or 0, e.last and e.last.time or 0) <= 60 then return end
+  racing, raceStart = e, GetTime()
   raceFrame()
   race.title:SetText("Race: " .. name)
   race:Show()

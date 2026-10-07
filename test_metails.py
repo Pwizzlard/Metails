@@ -210,11 +210,11 @@ e = db.best["Sam-Beta"].Hogger
 assert e.best.total == 1500 and e.best.time == 10 and e.best.spells.Spell133 == 1200 and e.last.time == 90, dict(e.last)
 fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
 race = [fr for fr in list(g.frames.values()) if fr.bars is not None][0]
-assert race.title.text == "Race: Hogger" and race.bars[1].text.text == "Best pace  1.5k in 10s (150.0/s)" and race.bars[2].text.text == "Previous pace  1.5k in 90s (150.0/s)" and race.bars[3].text.text == "Current  1.5k in 90s", (race.bars[1].text.text, race.bars[2].text.text)
+assert race.title.text == "Race: Hogger" and race.bars[1].text.text == "Best pace  1.5k in 10s (150.0/s)" and race.bars[2].text.text == "Previous pace  1.5k in 90s (150.0/s)" and race.bars[3].text.text == "Current  1.5k in 0s", (race.bars[1].text.text, race.bars[2].text.text)
 assert race.bars[4] is None
 g.incombat = True
 g.tickers[1]()
-assert race.bars[3].text.text == "Current  ~ in 90s", race.bars[3].text.text
+assert race.bars[3].text.text == "Current  ~ in 0s", race.bars[3].text.text
 g.incombat = False
 g.deaths = 1
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
@@ -237,3 +237,16 @@ fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 0)
 slash("bests")
 slash("forget Hogger")
 assert db.best["Sam-Beta"].Hogger is None
+
+L.execute('MetailsRecords = { Sam = { VanCleef = { best = { total = 4000, time = 100, rate = 40, date = "2026-10-01", at = 1, curve = { 100, 300, 600, 1000 } } } } }')
+g.now = 200
+fire(ev, "ENCOUNTER_START", 3, "VanCleef", 1, 5)
+assert race.shown is True and race.bars[1].text.text == "Best  4.0k in 100s (40.0/s)", race.bars[1].text.text
+assert race.bars[1].value == 100 and race.bars[2].text.text == "Current  1.5k in 0s", (race.bars[1].value, race.bars[2].text.text)
+g.now = 202.5
+g.tickers[1]()
+assert race.bars[1].value == 600 and race.bars[2].text.text == "Current  1.5k in 2s", (race.bars[1].value, race.bars[2].text.text)
+g.now = 260
+g.tickers[1]()
+assert race.bars[1].value == 1000, "curve holds its last value past its end"
+fire(ev, "ENCOUNTER_END", 3, "VanCleef", 1, 5, 0)

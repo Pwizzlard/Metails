@@ -21,7 +21,8 @@ During a fight the client hands addons locked numbers. Metails! still draws them
 - Open a second window to watch damage and healing at once.
 - Hide automatically in or out of combat, change rows, opacity, bar texture and font size.
 - Minimap button, a keybind, and an entry under Options, AddOns with the command list and the main buttons.
-- Boss records: kill a dungeon or raid boss without dying and your damage, rate, time and spells are saved. Next time that boss starts, a separate movable box shows up to three damage bars on one scale: Best, Previous kill, and Current, live. It only appears for bosses whose recorded kill took over a minute. Previous is left out when it is the same kill as Best. Best and Previous fill by elapsed time, showing where that kill would have been by now at an even pace, so a longer Current bar means you are ahead. Turn it off with `/metails racing off`. The kill prints how you did and updates the record if you beat it.
+- Boss records: kill a dungeon or raid boss without dying and your damage, rate, time and spells are saved. Next time that boss starts, a separate movable box shows up to three damage bars on one scale: Best, Previous kill, and Current, live. It only appears for bosses whose recorded kill took over a minute. Previous is left out when it is the same kill as Best. Best and Previous fill by elapsed time at an even pace, so a longer Current bar means you are ahead. Turn it off with `/metails racing off`.
+- Real curves from your combat log: type `/combatlog` before a raid, then run `python records.py` afterwards. It reads the log, builds a per-second damage curve for every boss kill, and writes them into a small `Metails_Records` addon next to Metails. After a reload, the race box plays your record's actual damage second by second instead of an even pace. The kill prints how you did and updates the record if you beat it.
 
 ## Views
 
@@ -69,6 +70,7 @@ The minimap button shows or hides the window on left-click, opens the menu on ri
 /metails bests                List your boss records
 /metails forget Hogger        Delete a boss record
 /metails racing off           Turn the race box off (or on)
+python records.py             Import boss kill curves from your combat logs (run outside the game)
 ```
 
 ## Install
