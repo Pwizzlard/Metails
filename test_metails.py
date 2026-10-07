@@ -9,6 +9,9 @@ C_Spell = { GetSpellTexture = function(id) return id == SECRET and "tex?" or "te
 tickers = {}
 C_Timer = { NewTicker = function(_, fn) tickers[#tickers + 1] = fn end, After = function(_, fn) fn() end }
 UnitName, GetRealmName, date = function() return "Sam" end, function() return "Beta" end, function() return "2026-10-04" end
+instance, logging = "none", false
+IsInInstance = function() return instance ~= "none", instance end
+LoggingCombat = function(v) if v ~= nil then logging = v end return logging end
 SECRET = setmetatable({}, { __tostring = function() return "SECRET" end })
 local function S(v) return incombat and SECRET or v end
 AbbreviateNumbers = function(v) return v == SECRET and "~" or tostring(v) end
@@ -202,8 +205,6 @@ fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
 assert not any(fr.bars is not None for fr in list(g.frames.values())), "no race box without a record"
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
 assert db.best["Sam-Beta"].Hogger.best.time == 10
-fire(ev, "ENCOUNTER_START", 1, "Hogger", 1, 5)
-assert not any(fr.bars is not None for fr in list(g.frames.values())), "no race box for a kill under a minute"
 g.dur = 90
 fire(ev, "ENCOUNTER_END", 1, "Hogger", 1, 5, 1)
 e = db.best["Sam-Beta"].Hogger
@@ -250,3 +251,22 @@ g.now = 260
 g.tickers[1]()
 assert race.bars[1].value == 1000, "curve holds its last value past its end"
 fire(ev, "ENCOUNTER_END", 3, "VanCleef", 1, 5, 0)
+
+assert db.opts.autolog is True and g.logging is False
+g.instance = "raid"
+fire(ev, "PLAYER_ENTERING_WORLD")
+assert g.logging is True, "logging turns on when entering a raid"
+g.instance = "none"
+fire(ev, "PLAYER_ENTERING_WORLD")
+assert g.logging is False, "logging turns off when leaving"
+g.logging = True
+g.instance = "none"
+fire(ev, "PLAYER_ENTERING_WORLD")
+assert g.logging is True, "logging the player turned on themselves is left alone"
+g.logging = False
+slash("autolog off")
+g.instance = "party"
+fire(ev, "PLAYER_ENTERING_WORLD")
+assert g.logging is False
+slash("autolog on")
+assert g.logging is True

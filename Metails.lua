@@ -288,6 +288,7 @@ local function openMenu(f)
     root:CreateButton("Report to chat", function() report(f) end)
     root:CreateCheckbox("Locked", function() return f.cfg.locked end, function() f.cfg.locked = not f.cfg.locked end)
     root:CreateCheckbox("Boss racing", function() return db.opts.racing end, function() CMD.racing("") end)
+    root:CreateCheckbox("Auto combat log in instances", function() return db.opts.autolog end, function() CMD.autolog("") end)
     root:CreateButton("Reset data", reset)
   end)
 end
@@ -519,7 +520,7 @@ end
 
 local function startRace(name)
   local e = entry(name)
-  if not db.opts.racing or not e or not (e.best or e.last) or max(e.best and e.best.time or 0, e.last and e.last.time or 0) <= 60 then return end
+  if not db.opts.racing or not e or not (e.best or e.last) then return end
   racing, raceStart = e, GetTime()
   raceFrame()
   race.title:SetText("Race: " .. name)
@@ -549,6 +550,20 @@ end
 
 local function finishBoss()
   if pendingBoss and recordBoss(pendingBoss) then pendingBoss = nil end
+end
+
+local loggedByUs = false
+local function autolog()
+  if not LoggingCombat then return end
+  local _, kind = IsInInstance()
+  local want = db.opts.autolog and (kind == "raid" or kind == "party")
+  local ok, on = pcall(LoggingCombat)
+  if not ok then return end
+  if want and not on then
+    if pcall(LoggingCombat, true) then loggedByUs = true; print("Metails!: combat logging on for this instance") end
+  elseif not want and on and loggedByUs then
+    if pcall(LoggingCombat, false) then loggedByUs = false; print("Metails!: combat logging off") end
+  end
 end
 
 local function defaultWindow(i)
@@ -581,7 +596,8 @@ local HELP = [[/metails - show or hide the window
 /metails diag - print whether the game is handing over readable numbers
 /metails bests - list your boss records (set by killing a dungeon or raid boss without dying)
 /metails forget <boss> - delete that record
-/metails racing [on|off] - show the race box when pulling a boss you have killed before]]
+/metails racing [on|off] - show the race box when pulling a boss you have killed before
+/metails autolog [on|off] - write the combat log automatically in raids and dungeons, for records.py]]
 
 local minimapBtn
 local function minimapPos(b)
@@ -662,6 +678,11 @@ function CMD.racing(a)
   if not db.opts.racing then racing = nil; if race then race:Hide() end end
   print("Metails!: boss racing " .. (db.opts.racing and "on" or "off"))
 end
+function CMD.autolog(a)
+  if a == "on" or a == "off" then db.opts.autolog = a == "on" elseif a == "" then db.opts.autolog = not db.opts.autolog else print("Metails!: autolog on or off") return end
+  print("Metails!: automatic combat logging in raids and dungeons " .. (db.opts.autolog and "on" or "off"))
+  autolog()
+end
 function CMD.forget(a)
   if bests()[a] then bests()[a] = nil; print("Metails!: forgot " .. a) else print("Metails!: no record for '" .. a .. "'") end
 end
@@ -693,6 +714,8 @@ end
 function CMD.diag()
   print(("Metails!: %d damage meter events received since login, in combat: %s"):format(events, tostring(UnitAffectingCombat("player"))))
   print("Metails!: events the client refused: " .. (#refused > 0 and table.concat(refused, ", ") or "none"))
+  local lok, lon = pcall(LoggingCombat or error, nil)
+  print("Metails!: combat logging control " .. (LoggingCombat and (lok and ("available, currently " .. (lon and "on" or "off")) or "refused by the client") or "missing") .. ", instance: " .. tostring(select(2, IsInInstance())))
   print("Metails!: a total captured mid-fight is now " .. (captured == nil and "not captured yet" or secret(captured) and "still locked" or ("readable = " .. fmt(captured))))
   local r = windows[1].rows[1]
   local tex = r and r:IsShown() and r:GetStatusBarTexture() or nil
@@ -751,19 +774,20 @@ ev:SetScript("OnEvent", function(_, e, ...)
                 texture = TEXTURES[o.texture] and o.texture or "smooth", autohide = o.autohide or "off",
                 minimap = num(o.minimap, -360, 360, 220), minimapHidden = o.minimapHidden == true,
                 racePos = type(o.racePos) == "table" and type(o.racePos[3]) == "number" and o.racePos or { "CENTER", "CENTER", 300, -260 },
-                racing = o.racing ~= false }
+                racing = o.racing ~= false, autolog = o.autolog ~= false }
     for _, w in ipairs(db.windows) do newWindow(w) end
     buildMinimap(); buildOptions()
     refreshHistory()
     applyVisibility()
     snapshotAll(true)
     C_Timer.NewTicker(0.5, function() snapshotAll(true) end)
-    for _, name in ipairs({ "DAMAGE_METER_COMBAT_SESSION_UPDATED", "DAMAGE_METER_CURRENT_SESSION_UPDATED", "DAMAGE_METER_RESET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "ENCOUNTER_START", "ENCOUNTER_END" }) do
+    for _, name in ipairs({ "DAMAGE_METER_COMBAT_SESSION_UPDATED", "DAMAGE_METER_CURRENT_SESSION_UPDATED", "DAMAGE_METER_RESET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "ENCOUNTER_START", "ENCOUNTER_END", "PLAYER_ENTERING_WORLD" }) do
       if not pcall(ev.RegisterEvent, ev, name) then refused[#refused + 1] = name end
     end
   elseif e == "DAMAGE_METER_RESET" then
     for _, f in ipairs(windows) do f.snap = nil end
     refreshHistory(); snapshotAll(true)
+  elseif e == "PLAYER_ENTERING_WORLD" then autolog()
   elseif e == "ENCOUNTER_START" then
     local _, name = ...
     startRace(name)
