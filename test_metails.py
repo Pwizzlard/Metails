@@ -171,9 +171,8 @@ g.tickers[1]()
 assert rows[1].right.text == "1.2k (120.0, 80.0%)", rows[1].right.text
 rows[1].scripts.OnEnter(rows[1])
 assert tip.title.text == "Spell133" and tip.lines[1].left.text == "Overkill" and tip.lines[1].right.text == "50"
-assert tip.lines[2].left.text == "Overall" and tip.lines[2].right.text == "1.2k (80.0%)", tip.lines[2].right.text
 rows[2].scripts.OnEnter(rows[2])
-assert tip.title.text == "Spell1 (Kitty)" and tip.lines[1].left.text == "Overall" and tip.lines[2].left.text == "Cast by" and tip.lines[2].right.text == "Kitty", tip.lines[2].left.text
+assert tip.title.text == "Spell1 (Kitty)" and tip.lines[1].left.text == "Cast by" and tip.lines[1].right.text == "Kitty", tip.lines[1].left.text
 
 slash("new")
 assert len(db.windows) == 2 and len(g.windowsOf()) == 2

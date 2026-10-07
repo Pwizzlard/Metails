@@ -229,20 +229,6 @@ local function rowTip(r)
   if m.log and plain(s.pct) then line("Health after", ("%.0f%%"):format(s.pct)) end
   if s.overkill then line("Overkill", abbrev(s.overkill)) end
   if s.avoidable then line("Avoidable", "yes") end
-  if plain(s.spellID) and plain(s.amount) and (views()[r.win.cfg.view] or {}).type ~= DMS.Overall and not m.by and not m.log then
-    local ov, mine = { type = DMS.Overall }, nil
-    local sess = session(ov, m.type)
-    for _, src in ipairs(sess and plain(sess.combatSources) and sess.combatSources or {}) do
-      if plain(src) and plain(src.isLocalPlayer) and src.isLocalPlayer and plain(src.totalAmount) then mine = src.totalAmount end
-    end
-    for _, sp in ipairs(mine and spells(ov, m.type) or {}) do
-      if plain(sp) and plain(sp.spellID) and sp.spellID == s.spellID and plain(sp.totalAmount) then
-        line("Overall", fmt(sp.totalAmount) .. (" (%.1f%%)"):format(sp.totalAmount / max(mine, 1) * 100))
-        break
-      end
-    end
-  end
-  if s.deadly then line("Killing blow", "yes") end
   if s.from and (m.tip == "From" or s.from.pet) then line(m.tip == "From" and "From" or "Cast by", s.from.name) end
   if s.spells and #s.spells > 0 then
     table.sort(s.spells, function(a, b) return a.amount > b.amount end)
