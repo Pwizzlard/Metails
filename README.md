@@ -76,7 +76,7 @@ python records.py             Import boss kill curves by hand instead
 
 ## Install
 
-Grab the latest release from the [releases page](https://github.com/Pwizzlard/Metails/releases) and unzip it into `World of Warcraft\_classic_beta_\Interface\AddOns`. You should end up with `Interface\AddOns\Metails\Metails.toc`. Restart the game client if it was running.
+Grab the latest release from the [releases page](https://github.com/Pwizzlard/Metails/releases) and unzip it into `World of Warcraft\_forever_\Interface\AddOns` (`_classic_beta_` instead of `_forever_` on the older beta client). You should end up with `Interface\AddOns\Metails\Metails.toc`. Restart the game client if it was running.
 
 Addon managers that read GitHub releases, like Forever Addon Manager, can install and update it for you.
 

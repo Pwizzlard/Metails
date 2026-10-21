@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-WOW = Path(os.environ.get("WOW_FOREVER") or (HERE.parents[2] if HERE.parent.name == "AddOns" else r"C:\Program Files (x86)\World of Warcraft\_classic_beta_"))
+WOW = Path(os.environ.get("WOW_FOREVER") or (HERE.parents[2] if HERE.parent.name == "AddOns" else r"C:\Program Files (x86)\World of Warcraft\_forever_"))
 DAMAGE = {"SWING_DAMAGE", "RANGE_DAMAGE", "SPELL_DAMAGE", "SPELL_PERIODIC_DAMAGE", "DAMAGE_SHIELD", "DAMAGE_SPLIT"}
 FACING = re.compile(r"^-?\d+\.\d{4}$")
 
